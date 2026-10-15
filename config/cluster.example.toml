@@ -1,0 +1,23 @@
+# Shared cluster topology. Each node points DSEARCH_CONFIG at this file and
+# sets its own identity with env vars (DSEARCH_NODE_ID, DSEARCH_ROLE,
+# DSEARCH_SHARD_ID, DSEARCH_PORT). Env vars override values here (D-002).
+
+num_shards = 3
+replicas_per_shard = 2
+data_dir = "data"
+log_level = "INFO"
+
+[[shards]]
+id = 0
+primary = "shard0-primary:50051"
+replicas = ["shard0-replica1:50051", "shard0-replica2:50051"]
+
+[[shards]]
+id = 1
+primary = "shard1-primary:50051"
+replicas = ["shard1-replica1:50051", "shard1-replica2:50051"]
+
+[[shards]]
+id = 2
+primary = "shard2-primary:50051"
+replicas = ["shard2-replica1:50051", "shard2-replica2:50051"]

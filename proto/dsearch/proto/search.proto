@@ -1,0 +1,21 @@
+// Source of truth for every node-to-node and client RPC.
+// Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py (see D-001).
+// Phase 0 defines only the liveness check; write, search, replication and
+// recovery RPCs are added in Phase 3.
+
+syntax = "proto3";
+
+package dsearch;
+
+// Implemented by every node (coordinator, shard primary, replica).
+service Node {
+  // Liveness and identity check, used by tests and cluster scripts.
+  rpc Ping(PingRequest) returns (PingReply);
+}
+
+message PingRequest {}
+
+message PingReply {
+  string node_id = 1;
+  string role = 2;
+}

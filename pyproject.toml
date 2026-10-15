@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsearch"
+version = "0.1.0"
+description = "Distributed search engine with incremental index recovery (IITH Distributed Systems project)"
+authors = [{ name = "Aviral Tyagi" }, { name = "Harsh Jaiswal" }]
+requires-python = ">=3.11"
+dependencies = [
+    "grpcio>=1.62",
+    "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+dev = [
+    "grpcio-tools>=1.62",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+]
+eval = [
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "docker: needs a running Docker Compose cluster (skipped when Docker is unavailable)",
+]
