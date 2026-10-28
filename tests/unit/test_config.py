@@ -20,12 +20,14 @@ def test_env_overrides_defaults() -> None:
             "DSEARCH_PORT": "6000",
             "DSEARCH_DATA_DIR": "/tmp/x",
             "DSEARCH_LOG_LEVEL": "debug",
+            "DSEARCH_SNAPSHOT_EVERY": "500",
         }
     )
     assert config.role is Role.REPLICA
     assert config.shard_id == 1
     assert config.port == 6000
     assert config.log_level == "DEBUG"
+    assert config.snapshot_every == 500
     assert config.node_data_dir == Path("/tmp/x/shard1-replica2")
 
 
@@ -51,6 +53,7 @@ def test_env_beats_file(tmp_path: Path) -> None:
         {"DSEARCH_PORT": "abc"},
         {"DSEARCH_PORT": "70000"},
         {"DSEARCH_NUM_SHARDS": "0"},
+        {"DSEARCH_SNAPSHOT_EVERY": "-1"},
         {"DSEARCH_ROLE": "leader"},
         {"DSEARCH_ROLE": "primary"},  # missing shard id
         {"DSEARCH_ROLE": "replica", "DSEARCH_SHARD_ID": "3"},  # out of range for 3 shards

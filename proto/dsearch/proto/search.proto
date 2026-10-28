@@ -1,7 +1,6 @@
 // Source of truth for every node-to-node and client RPC.
 // Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py (see D-001).
-// Phase 0 defines only the liveness check; write, search, replication and
-// recovery RPCs are added in Phase 3.
+// Write, search, replication and recovery RPCs are added in Phase 3.
 
 syntax = "proto3";
 
@@ -18,4 +17,23 @@ message PingRequest {}
 message PingReply {
   string node_id = 1;
   string role = 2;
+}
+
+// ---- Update log -------------------------------------------------------
+// One sequenced operation. Stored in each node's update log (D-008) and,
+// from Phase 3, sent unchanged in replication and recovery streams.
+
+enum OpType {
+  OP_TYPE_UNSPECIFIED = 0;
+  OP_TYPE_INSERT = 1;
+  OP_TYPE_REPLACE = 2;
+  OP_TYPE_DELETE = 3;
+}
+
+message LogEntry {
+  uint64 seq = 1;         // per-shard sequence number, dense from 1
+  OpType op_type = 2;
+  string doc_id = 3;
+  uint64 version = 4;     // client-supplied document version (D-003)
+  optional string text = 5;  // absent for deletes
 }

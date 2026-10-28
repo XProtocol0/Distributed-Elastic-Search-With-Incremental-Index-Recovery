@@ -42,6 +42,7 @@ class Config:
     port: int = 50051
     data_dir: Path = Path("data")
     log_level: str = "INFO"
+    snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off (D-011)
     shards: tuple[ShardTopology, ...] = field(default_factory=tuple)
 
     @property
@@ -69,6 +70,7 @@ _ENV_FIELDS: dict[str, tuple[str, Any]] = {
     "DSEARCH_PORT": ("port", int),
     "DSEARCH_DATA_DIR": ("data_dir", Path),
     "DSEARCH_LOG_LEVEL": ("log_level", str.upper),
+    "DSEARCH_SNAPSHOT_EVERY": ("snapshot_every", int),
 }
 
 _FILE_FIELDS: dict[str, Any] = {name: parse for name, parse in _ENV_FIELDS.values()}
@@ -132,6 +134,8 @@ def _validate(config: Config) -> None:
         raise ConfigError("num_shards must be at least 1")
     if config.replicas_per_shard < 0:
         raise ConfigError("replicas_per_shard must not be negative")
+    if config.snapshot_every < 0:
+        raise ConfigError("snapshot_every must not be negative")
     if not 0 < config.port < 65536:
         raise ConfigError(f"port {config.port} out of range")
     if config.role in (Role.PRIMARY, Role.REPLICA):
