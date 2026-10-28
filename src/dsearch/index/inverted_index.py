@@ -49,6 +49,15 @@ class InvertedIndex:
         self._live_count = 0
         self._total_length = 0
 
+    @classmethod
+    def from_state(cls, docs: dict[str, DocState]) -> "InvertedIndex":
+        """Build an index holding exactly `docs` (live docs and tombstones)."""
+        index = cls()
+        for doc_id, doc in docs.items():
+            op_type = OpType.DELETE if doc.deleted else OpType.INSERT
+            index.apply(Operation(op_type, doc_id, doc.version, doc.text))
+        return index
+
     # ---- writes ---------------------------------------------------------
 
     def apply(self, op: Operation) -> ApplyResult:
