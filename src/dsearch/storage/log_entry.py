@@ -13,6 +13,17 @@ _TO_PROTO = {
 _FROM_PROTO = {v: k for k, v in _TO_PROTO.items()}
 
 
+def op_type_to_proto(op_type: OpType) -> int:
+    return _TO_PROTO[op_type]
+
+
+def op_type_from_proto(value: int) -> OpType:
+    """Raises ValueError for OP_TYPE_UNSPECIFIED or an unknown value."""
+    if value not in _FROM_PROTO:
+        raise ValueError(f"unknown op_type {value}")
+    return _FROM_PROTO[value]
+
+
 def make_entry(seq: int, op: Operation) -> search_pb2.LogEntry:
     entry = search_pb2.LogEntry(
         seq=seq, op_type=_TO_PROTO[op.op_type], doc_id=op.doc_id, version=op.version
@@ -27,4 +38,4 @@ def entry_to_operation(entry: search_pb2.LogEntry) -> Operation:
     if entry.op_type not in _FROM_PROTO:
         raise ValueError(f"seq={entry.seq}: unknown op_type {entry.op_type}")
     text = entry.text if entry.HasField("text") else None
-    return Operation(_FROM_PROTO[entry.op_type], entry.doc_id, entry.version, text)
+    return Operation(op_type_from_proto(entry.op_type), entry.doc_id, entry.version, text)

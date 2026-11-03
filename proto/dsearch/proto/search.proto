@@ -1,6 +1,6 @@
 // Source of truth for every node-to-node and client RPC.
 // Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py (see D-001).
-// Write, search, replication and recovery RPCs are added in Phase 3.
+// Coordinator RPCs are added in Phase 4.
 
 syntax = "proto3";
 
@@ -36,4 +36,89 @@ message LogEntry {
   string doc_id = 3;
   uint64 version = 4;     // client-supplied document version (D-003)
   optional string text = 5;  // absent for deletes
+}
+
+// ---- Shard nodes ------------------------------------------------------
+// Served by every shard primary and replica. Write and Replicate are
+// served only by primaries (others answer FAILED_PRECONDITION).
+
+service Shard {
+  // Assign the next seq to a write, log + fsync it, apply it, then ack (D-013).
+  rpc Write(WriteRequest) returns (WriteReply);
+
+  // Replica pull (D-012): stream every entry with seq > from_seq, then a
+  // caught_up_seq marker, then new entries live as they are applied.
+  rpc Replicate(ReplicateRequest) returns (stream ReplicateMessage);
+
+  // This copy's share of the ranking statistics for a query's terms.
+  rpc GetStats(StatsRequest) returns (CorpusStats);
+
+  // Local top-k for a query, scored with the given global statistics.
+  rpc SearchShard(ShardSearchRequest) returns (ShardSearchReply);
+
+  // Every stored doc (live and tombstoned) plus applied_seq, for convergence checks.
+  rpc DumpState(DumpStateRequest) returns (DumpStateReply);
+}
+
+message WriteRequest {
+  OpType op_type = 1;
+  string doc_id = 2;
+  uint64 version = 3;
+  optional string text = 4;  // absent for deletes
+}
+
+message WriteReply {
+  uint64 seq = 1;
+  bool applied = 2;  // false: version not newer, a logged no-op (D-003)
+}
+
+message ReplicateRequest {
+  string replica_id = 1;
+  uint64 from_seq = 2;  // the replica's persisted applied_seq
+}
+
+message ReplicateMessage {
+  oneof kind {
+    LogEntry entry = 1;
+    uint64 caught_up_seq = 2;  // all entries up to here have been sent
+  }
+}
+
+message StatsRequest {
+  string query = 1;
+}
+
+message CorpusStats {
+  uint64 doc_count = 1;
+  uint64 total_length = 2;
+  map<string, uint64> doc_freq = 3;
+}
+
+message ShardSearchRequest {
+  string query = 1;
+  CorpusStats global_stats = 2;
+  uint32 k = 3;
+}
+
+message SearchHit {
+  string doc_id = 1;
+  double score = 2;  // double round-trips exactly, so scores compare with == (D-006)
+}
+
+message ShardSearchReply {
+  repeated SearchHit hits = 1;
+  uint64 applied_seq = 2;
+}
+
+message DumpStateRequest {}
+
+message DocRecord {
+  string doc_id = 1;
+  uint64 version = 2;
+  optional string text = 3;  // absent = tombstone
+}
+
+message DumpStateReply {
+  uint64 applied_seq = 1;
+  repeated DocRecord docs = 2;
 }
