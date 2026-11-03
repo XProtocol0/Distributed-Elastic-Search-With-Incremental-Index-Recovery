@@ -175,3 +175,21 @@ async def test_check_convergence_script(cluster, tmp_path: Path) -> None:
     code, out = await run_script("--config", str(config), "--ops", str(ops_file))
     assert code == 1
     assert "missing_doc" in out and "never-sent" in out
+
+
+async def test_checker_handles_shard_states_larger_than_grpc_default_limit(tmp_path: Path) -> None:
+    """DumpState of a full-size shard exceeds gRPC's default 4 MB message limit."""
+    cluster = await LocalCluster.start(tmp_path, num_shards=1, replicas_per_shard=1)
+    client = SearchClient(cluster.coordinator_address)
+    reference = SingleNodeReference()
+    try:
+        for i in range(250):
+            op = Operation(OpType.INSERT, f"big{i}", 1, f"word{i} " + "lorem ipsum " * 2000)  # ~24 KB each
+            await client.write(op)
+            reference.apply(op)
+        await cluster.wait_replicated()
+        report = await check_convergence(cluster.base.shards, reference)
+        assert report.converged, report.summary()
+    finally:
+        await client.close()
+        await cluster.stop()
