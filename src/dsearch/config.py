@@ -16,6 +16,13 @@ from pathlib import Path
 from typing import Any
 
 
+class SearchPreference(str, Enum):
+    """Which shard copy a search reads (D-019)."""
+
+    PRIMARY = "primary"
+    ROUND_ROBIN = "round_robin"
+
+
 class Role(str, Enum):
     COORDINATOR = "coordinator"
     PRIMARY = "primary"
@@ -43,6 +50,8 @@ class Config:
     data_dir: Path = Path("data")
     log_level: str = "INFO"
     snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off (D-011)
+    search_preference: SearchPreference = SearchPreference.PRIMARY
+    rpc_timeout: float = 5.0  # seconds, per coordinator-to-shard call
     shards: tuple[ShardTopology, ...] = field(default_factory=tuple)
 
     @property
@@ -71,6 +80,8 @@ _ENV_FIELDS: dict[str, tuple[str, Any]] = {
     "DSEARCH_DATA_DIR": ("data_dir", Path),
     "DSEARCH_LOG_LEVEL": ("log_level", str.upper),
     "DSEARCH_SNAPSHOT_EVERY": ("snapshot_every", int),
+    "DSEARCH_SEARCH_PREFERENCE": ("search_preference", SearchPreference),
+    "DSEARCH_RPC_TIMEOUT": ("rpc_timeout", float),
 }
 
 _FILE_FIELDS: dict[str, Any] = {name: parse for name, parse in _ENV_FIELDS.values()}
@@ -136,6 +147,8 @@ def _validate(config: Config) -> None:
         raise ConfigError("replicas_per_shard must not be negative")
     if config.snapshot_every < 0:
         raise ConfigError("snapshot_every must not be negative")
+    if config.rpc_timeout <= 0:
+        raise ConfigError("rpc_timeout must be positive")
     if not 0 < config.port < 65536:
         raise ConfigError(f"port {config.port} out of range")
     if config.role in (Role.PRIMARY, Role.REPLICA):

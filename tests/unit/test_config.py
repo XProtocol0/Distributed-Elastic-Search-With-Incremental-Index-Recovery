@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dsearch.config import Config, ConfigError, Role, load_config
+from dsearch.config import Config, ConfigError, Role, SearchPreference, load_config
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "config" / "cluster.example.toml"
 
@@ -21,6 +21,8 @@ def test_env_overrides_defaults() -> None:
             "DSEARCH_DATA_DIR": "/tmp/x",
             "DSEARCH_LOG_LEVEL": "debug",
             "DSEARCH_SNAPSHOT_EVERY": "500",
+            "DSEARCH_SEARCH_PREFERENCE": "round_robin",
+            "DSEARCH_RPC_TIMEOUT": "2.5",
         }
     )
     assert config.role is Role.REPLICA
@@ -28,6 +30,8 @@ def test_env_overrides_defaults() -> None:
     assert config.port == 6000
     assert config.log_level == "DEBUG"
     assert config.snapshot_every == 500
+    assert config.search_preference is SearchPreference.ROUND_ROBIN
+    assert config.rpc_timeout == 2.5
     assert config.node_data_dir == Path("/tmp/x/shard1-replica2")
 
 
@@ -54,6 +58,8 @@ def test_env_beats_file(tmp_path: Path) -> None:
         {"DSEARCH_PORT": "70000"},
         {"DSEARCH_NUM_SHARDS": "0"},
         {"DSEARCH_SNAPSHOT_EVERY": "-1"},
+        {"DSEARCH_SEARCH_PREFERENCE": "replicas_only"},
+        {"DSEARCH_RPC_TIMEOUT": "0"},
         {"DSEARCH_ROLE": "leader"},
         {"DSEARCH_ROLE": "primary"},  # missing shard id
         {"DSEARCH_ROLE": "replica", "DSEARCH_SHARD_ID": "3"},  # out of range for 3 shards

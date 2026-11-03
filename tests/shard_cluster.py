@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 from pathlib import Path
 
 import grpc
@@ -11,16 +10,11 @@ import grpc
 from dsearch.config import Config, Role, ShardTopology
 from dsearch.index.inverted_index import DocState
 from dsearch.index.operation import Operation
+from dsearch.local_cluster import free_port
 from dsearch.proto import search_pb2, search_pb2_grpc
 from dsearch.shard.node import ShardNode
 from dsearch.shard.replica import RecoveryRecord
 from dsearch.wire import operation_to_write_request, state_from_proto
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 def shard_config(data_dir: Path, role: Role, node_id: str, port: int, primary_port: int) -> Config:

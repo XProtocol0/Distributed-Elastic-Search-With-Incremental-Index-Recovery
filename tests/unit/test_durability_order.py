@@ -1,5 +1,7 @@
 """Invariant 4: log + fsync, then apply, then persist applied_seq; crash at any step recovers."""
 
+import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -146,3 +148,35 @@ async def test_failed_snapshot_does_not_fail_the_write(
     assert await store.write(ins(1, "a", 1, "x")) is ApplyResult.APPLIED
     assert store.snapshot_seq == 0
     assert await store.write(ins(2, "b", 1, "y")) is ApplyResult.APPLIED
+
+
+def slow_appends(store: ShardStore, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    original = store.update_log.append_sync
+
+    def slow(entry):
+        time.sleep(seconds)
+        original(entry)
+
+    monkeypatch.setattr(store.update_log, "append_sync", slow)
+
+
+async def test_cancelled_write_still_completes_and_store_stays_healthy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-021: cancelling the caller (client deadline, replica disconnect) must
+    neither fail the store nor leave a half-done write."""
+    store = await ShardStore.open(tmp_path)
+    slow_appends(store, monkeypatch, 0.2)
+    task = asyncio.create_task(store.write(ins(1, "a", 1, "x")))
+    await asyncio.sleep(0.05)  # now inside the fsync
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.undo()
+
+    assert await store.write(ins(2, "b", 1, "y")) is ApplyResult.APPLIED  # waits for seq 1
+    assert store.index.get("a") == DocState(1, "x")
+    assert store.db.applied_seq_sync() == 2
+    await store.close()
+    reopened = await ShardStore.open(tmp_path)
+    assert reopened.applied_seq == 2
