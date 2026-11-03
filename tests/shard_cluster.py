@@ -17,7 +17,9 @@ from dsearch.shard.replica import RecoveryRecord
 from dsearch.wire import operation_to_write_request, state_from_proto
 
 
-def shard_config(data_dir: Path, role: Role, node_id: str, port: int, primary_port: int) -> Config:
+def shard_config(
+    data_dir: Path, role: Role, node_id: str, port: int, primary_port: int, keepalive: float = 5.0
+) -> Config:
     return Config(
         node_id=node_id,
         role=role,
@@ -27,16 +29,20 @@ def shard_config(data_dir: Path, role: Role, node_id: str, port: int, primary_po
         port=port,
         data_dir=data_dir,
         snapshot_every=0,
+        keepalive_time=keepalive,
+        keepalive_timeout=keepalive,
         shards=(ShardTopology(0, f"127.0.0.1:{primary_port}", ()),),
     )
 
 
-async def start_primary(data_dir: Path, port: int) -> ShardNode:
-    return await ShardNode.start(shard_config(data_dir, Role.PRIMARY, "s0-primary", port, port))
+async def start_primary(data_dir: Path, port: int, keepalive: float = 5.0) -> ShardNode:
+    return await ShardNode.start(shard_config(data_dir, Role.PRIMARY, "s0-primary", port, port, keepalive))
 
 
-async def start_replica(data_dir: Path, primary_port: int, node_id: str = "s0-replica1") -> ShardNode:
-    config = shard_config(data_dir, Role.REPLICA, node_id, 0, primary_port)
+async def start_replica(
+    data_dir: Path, primary_port: int, node_id: str = "s0-replica1", keepalive: float = 5.0
+) -> ShardNode:
+    config = shard_config(data_dir, Role.REPLICA, node_id, 0, primary_port, keepalive)
     return await ShardNode.start(config, replica_retry_delay=0.05)
 
 

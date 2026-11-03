@@ -49,8 +49,10 @@ class ScatterGather:
         shards: tuple[ShardTopology, ...],
         preference: SearchPreference,
         rpc_timeout: float,
+        channel_options: list[tuple[str, int]] | None = None,
     ) -> None:
         self._shards = sorted(shards, key=lambda s: s.shard_id)
+        self._channel_options = channel_options or []  # keepalive (D-024)
         self._preference = preference
         self._timeout = rpc_timeout
         self._next_copy = {s.shard_id: 0 for s in self._shards}  # round-robin cursors
@@ -60,7 +62,7 @@ class ScatterGather:
     def stub(self, address: str) -> search_pb2_grpc.ShardStub:
         """Shared channel per shard-node address, created on first use."""
         if address not in self._stubs:
-            self._channels[address] = grpc.aio.insecure_channel(address)
+            self._channels[address] = grpc.aio.insecure_channel(address, options=self._channel_options)
             self._stubs[address] = search_pb2_grpc.ShardStub(self._channels[address])
         return self._stubs[address]
 

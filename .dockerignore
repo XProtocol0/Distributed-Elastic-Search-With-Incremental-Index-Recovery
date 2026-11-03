@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+data
+results
+.pytest_cache
+.hypothesis
+**/__pycache__
+*.egg-info
+src/dsearch/proto/*_pb2*.py
+src/dsearch/proto/*_pb2*.pyi
+design_decisions.md
+Plan.md
+Project_Writeup.pdf

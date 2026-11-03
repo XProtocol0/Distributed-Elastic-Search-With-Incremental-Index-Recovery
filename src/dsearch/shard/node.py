@@ -7,7 +7,7 @@ import logging
 import grpc
 
 from dsearch.config import Config, ConfigError, Role
-from dsearch.node_server import create_server
+from dsearch.node_server import channel_options, create_server
 from dsearch.proto import search_pb2_grpc
 from dsearch.shard.primary import Primary
 from dsearch.shard.replica import Replica
@@ -41,14 +41,18 @@ class ShardNode:
             raise ConfigError(f"a shard node needs role primary or replica, got {config.role.value}")
         store = await ShardStore.open(config.node_data_dir, config.snapshot_every)
         primary = Primary(store) if config.role is Role.PRIMARY else None
-
-        server, port = create_server(config)
-        search_pb2_grpc.add_ShardServicer_to_server(ShardServicer(store, primary), server)
-        await server.start()
-
         replica = None
         if config.role is Role.REPLICA:
-            replica = Replica(store, primary_address(config), config.node_id, replica_retry_delay)
+            replica = Replica(
+                store, primary_address(config), config.node_id, replica_retry_delay, channel_options(config)
+            )
+
+        server, port = create_server(config)
+        search_pb2_grpc.add_ShardServicer_to_server(
+            ShardServicer(config.node_id, store, primary, replica), server
+        )
+        await server.start()
+        if replica is not None:
             replica.connect()
         log.info(
             "shard=%s %s %s serving on port %d at applied_seq=%d",

@@ -57,7 +57,10 @@ class Primary:
                 log.info("replica=%s caught up to seq=%d, streaming live", replica_id, target)
                 yield search_pb2.ReplicateMessage(caught_up_seq=target)
 
-            batch = await self.store.read_applied_after(next_seq, self.batch_size)
+            # During catch-up, stop each batch at `target` so the marker comes right
+            # after it and the replica's recovery record counts only missed entries (D-029).
+            limit = self.batch_size if caught_up else min(self.batch_size, target - next_seq)
+            batch = await self.store.read_applied_after(next_seq, limit)
             if not batch:
                 await self.store.wait_for_applied_beyond(next_seq)
                 continue

@@ -4,7 +4,8 @@ The replica calls `Replicate(from_seq = applied_seq)` on the primary (D-012).
 Everything before the `caught_up_seq` marker is incremental recovery; after
 it, entries arrive live. If the stream breaks for any reason, the replica
 reconnects from its persisted applied_seq, so only missed entries are
-replayed. Any unexpected seq drops the stream (D-015).
+replayed. Any unexpected seq drops the stream (D-015). The channel uses
+keepalive, so a silent partition also breaks the stream (D-024).
 """
 
 from __future__ import annotations
@@ -43,11 +44,14 @@ class Replica:
         primary_address: str,
         replica_id: str,
         retry_delay: float = 0.5,
+        channel_options: list[tuple[str, int]] | None = None,
     ) -> None:
         self.store = store
         self.primary_address = primary_address
         self.replica_id = replica_id
         self.retry_delay = retry_delay
+        self.channel_options = channel_options or []
+        self.live = False  # past the caught_up marker on the current stream
         self.recoveries: list[RecoveryRecord] = []
         self.full_rebuilds = 0  # stays 0 until the Phase 7 full-rebuild path exists
         self._task: asyncio.Task[None] | None = None
@@ -100,6 +104,8 @@ class Replica:
             except StoreFailedError:
                 log.error("replica=%s: local store failed; stopping replication", self.replica_id)
                 return
+            finally:
+                self.live = False
             await asyncio.sleep(self.retry_delay)
 
     async def _replicate_once(self) -> None:
@@ -108,7 +114,7 @@ class Replica:
         started = time.monotonic()
         replayed = 0
         log.info("replica=%s requesting entries after seq=%d from %s", self.replica_id, from_seq, self.primary_address)
-        async with grpc.aio.insecure_channel(self.primary_address) as channel:
+        async with grpc.aio.insecure_channel(self.primary_address, options=self.channel_options) as channel:
             stream = search_pb2_grpc.ShardStub(channel).Replicate(
                 search_pb2.ReplicateRequest(replica_id=self.replica_id, from_seq=from_seq)
             )
@@ -126,6 +132,7 @@ class Replica:
                         from_seq, message.caught_up_seq, replayed, time.monotonic() - started
                     )
                     self.recoveries.append(record)
+                    self.live = True
                     async with self._recovered:
                         self._recovered.notify_all()
                     log.info(

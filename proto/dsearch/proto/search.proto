@@ -57,6 +57,9 @@ service Shard {
 
   // Every stored doc (live and tombstoned) plus applied_seq, for convergence checks.
   rpc DumpState(DumpStateRequest) returns (DumpStateReply);
+
+  // Replication and recovery status of this copy, for scripts and evaluation (D-025).
+  rpc GetStatus(StatusRequest) returns (StatusReply);
 }
 
 message WriteRequest {
@@ -120,6 +123,29 @@ message DocRecord {
 message DumpStateReply {
   uint64 applied_seq = 1;
   repeated DocRecord docs = 2;
+}
+
+message StatusRequest {}
+
+// One replica catch-up session: from connecting until the caught_up_seq marker.
+message RecoverySession {
+  uint64 from_seq = 1;
+  uint64 caught_up_seq = 2;
+  uint64 entries_replayed = 3;
+  double seconds = 4;
+}
+
+message StatusReply {
+  string node_id = 1;
+  string role = 2;               // "primary" or "replica"
+  uint64 applied_seq = 3;
+  uint64 last_logged_seq = 4;
+  uint64 log_bytes = 5;
+  uint64 snapshot_seq = 6;
+  uint64 local_replayed = 7;     // log entries replayed from local disk at startup
+  bool live = 8;                 // replica: past the caught_up marker on a live stream
+  repeated RecoverySession recoveries = 9;  // replica: since this process started
+  uint32 full_rebuilds = 10;
 }
 
 // ---- Coordinator (client entry point) ---------------------------------
