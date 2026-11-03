@@ -81,13 +81,28 @@ class ScatterGather:
         """Global top-k for `query`, identical to the single-node reference."""
         if k <= 0 or not query_terms(query):
             return SearchResult([], [])
-
         phase1 = await asyncio.gather(
             *(self._stats_from_first_reachable(shard, query) for shard in self._shards)
         )
+        return await self._search_phase2(query, k, phase1)
+
+    async def search_on_copies(self, query: str, k: int, copies: list[str]) -> SearchResult:
+        """Like `search`, but read exactly `copies[shard_id]` for each shard, with no
+        failover. Used by the convergence checker to test one replica at a time."""
+        if k <= 0 or not query_terms(query):
+            return SearchResult([], [])
+        phase1 = await asyncio.gather(
+            *(self._stats_from_copy(shard.shard_id, address, query)
+              for shard, address in zip(self._shards, copies))
+        )
+        return await self._search_phase2(query, k, phase1)
+
+    async def _search_phase2(
+        self, query: str, k: int, phase1: list[tuple[str, CorpusStats]]
+    ) -> SearchResult:
+        """Score on the copies chosen in phase 1 with the summed stats, then merge."""
         copies = [address for address, _ in phase1]
         global_stats = CorpusStats.merge([stats for _, stats in phase1])
-
         per_shard = await asyncio.gather(
             *(
                 self._search_copy(shard.shard_id, address, query, global_stats, k)
@@ -98,20 +113,23 @@ class ScatterGather:
         log.debug("search q=%r k=%d copies=%s -> %d hits", query, k, copies, len(hits))
         return SearchResult(hits, copies)
 
+    async def _stats_from_copy(self, shard_id: int, address: str, query: str) -> tuple[str, CorpusStats]:
+        try:
+            reply = await self.stub(address).GetStats(
+                search_pb2.StatsRequest(query=query), timeout=self._timeout
+            )
+        except grpc.aio.AioRpcError as exc:
+            raise ShardUnavailableError(f"shard {shard_id} copy {address}: {exc.code().name}") from exc
+        return address, stats_from_proto(reply)
+
     async def _stats_from_first_reachable(
         self, shard: ShardTopology, query: str
     ) -> tuple[str, CorpusStats]:
         for address in self.copy_order(shard):
             try:
-                reply = await self.stub(address).GetStats(
-                    search_pb2.StatsRequest(query=query), timeout=self._timeout
-                )
-                return address, stats_from_proto(reply)
-            except grpc.aio.AioRpcError as exc:
-                log.warning(
-                    "shard=%d copy %s unavailable for stats (%s); trying next copy",
-                    shard.shard_id, address, exc.code().name,
-                )
+                return await self._stats_from_copy(shard.shard_id, address, query)
+            except ShardUnavailableError as exc:
+                log.warning("%s; trying next copy", exc)
         raise ShardUnavailableError(f"no copy of shard {shard.shard_id} answered")
 
     async def _search_copy(
