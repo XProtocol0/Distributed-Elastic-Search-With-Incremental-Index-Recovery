@@ -108,7 +108,10 @@ async def check_convergence(
     expected_hits = {q: reference.search(q, k) for q in queries}
 
     report = ConvergenceReport()
-    scatter = ScatterGather(shards, SearchPreference.PRIMARY, rpc_timeout)
+    # A whole shard's DumpState easily exceeds gRPC's default 4 MB receive limit.
+    scatter = ScatterGather(
+        shards, SearchPreference.PRIMARY, rpc_timeout, [("grpc.max_receive_message_length", -1)]
+    )
     try:
         for shard in shards:
             primary_seq: int | None = None
