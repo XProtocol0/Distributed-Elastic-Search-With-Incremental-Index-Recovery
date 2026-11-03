@@ -1,6 +1,5 @@
 // Source of truth for every node-to-node and client RPC.
 // Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py (see D-001).
-// Coordinator RPCs are added in Phase 4.
 
 syntax = "proto3";
 
@@ -121,4 +120,31 @@ message DocRecord {
 message DumpStateReply {
   uint64 applied_seq = 1;
   repeated DocRecord docs = 2;
+}
+
+// ---- Coordinator (client entry point) ---------------------------------
+
+service Coordinator {
+  // Route a write by crc32(doc_id) % N to that shard's primary (D-017, D-020).
+  rpc Write(WriteRequest) returns (CoordinatorWriteReply);
+
+  // Two-phase scatter-gather: global stats, then per-shard top-k merged into
+  // the global top-k, ties broken by doc_id (D-018, D-019).
+  rpc Search(SearchRequest) returns (SearchReply);
+}
+
+message CoordinatorWriteReply {
+  uint32 shard_id = 1;
+  uint64 seq = 2;
+  bool applied = 3;  // false: version not newer, a logged no-op
+}
+
+message SearchRequest {
+  string query = 1;
+  uint32 k = 2;
+}
+
+message SearchReply {
+  repeated SearchHit hits = 1;
+  repeated string copies_read = 2;  // address of the copy read for each shard, by shard id
 }

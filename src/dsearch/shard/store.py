@@ -36,6 +36,10 @@ class CorruptStateError(Exception):
     """Persisted state breaks snapshot_seq <= applied_seq <= last logged seq."""
 
 
+class SeqMismatchError(ValueError):
+    """A write's seq is not applied_seq + 1."""
+
+
 class StoreFailedError(Exception):
     """A write failed part-way; the node must restart to recover from disk."""
 
@@ -110,13 +114,20 @@ class ShardStore:
         leaves the store failed (crash-stop); reopening recovers from disk.
         """
         op = entry_to_operation(entry)  # reject malformed entries before logging
-        async with self._write_lock:
-            if entry.seq != self.applied_seq + 1:
-                raise ValueError(f"write seq={entry.seq}, expected seq={self.applied_seq + 1}")
-            return await self._write_locked(entry, op)
+        # Shielded (D-021): a cancelled caller must not cut the durability steps in half.
+        return await asyncio.shield(self._write(entry, op))
 
     async def append_new(self, op: Operation) -> tuple[int, ApplyResult]:
         """Assign the next seq to `op` and write it (primary path)."""
+        return await asyncio.shield(self._append_new(op))  # see D-021
+
+    async def _write(self, entry: search_pb2.LogEntry, op: Operation) -> ApplyResult:
+        async with self._write_lock:
+            if entry.seq != self.applied_seq + 1:
+                raise SeqMismatchError(f"write seq={entry.seq}, expected seq={self.applied_seq + 1}")
+            return await self._write_locked(entry, op)
+
+    async def _append_new(self, op: Operation) -> tuple[int, ApplyResult]:
         async with self._write_lock:
             entry = make_entry(self.applied_seq + 1, op)
             return entry.seq, await self._write_locked(entry, op)

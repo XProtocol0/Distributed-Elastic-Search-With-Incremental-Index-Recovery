@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 
 import grpc
@@ -11,7 +13,7 @@ from dsearch.index.bm25 import CorpusStats
 from dsearch.index.operation import Operation, OpType
 from dsearch.proto import search_pb2
 from dsearch.reference.single_node import SingleNodeReference
-from dsearch.wire import hits_from_proto, stats_from_proto, stats_to_proto
+from dsearch.wire import hits_from_proto, operation_to_write_request, stats_from_proto, stats_to_proto
 from tests.shard_cluster import (
     ShardClient,
     free_port,
@@ -202,3 +204,46 @@ async def test_search_rpcs_return_exact_local_results(cluster) -> None:
     )
     assert hits_from_proto(reply.hits) == primary.store.index.search(query, global_stats, 5)  # exact floats
     assert reply.applied_seq == primary.store.applied_seq
+
+
+def slow_appends(node, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    original = node.store.update_log.append_sync
+
+    def slow(entry):
+        time.sleep(seconds)
+        original(entry)
+
+    monkeypatch.setattr(node.store.update_log, "append_sync", slow)
+
+
+async def test_disconnect_in_the_middle_of_a_replica_write(cluster, monkeypatch) -> None:
+    """D-021: disconnect() cancels the replica mid-write; the write finishes, and
+    the replica reconnects and converges instead of failing its store."""
+    primary, replica, client, _, _ = cluster
+    reference = SingleNodeReference()
+    await wait_for_recovery(replica, 1)
+    slow_appends(replica, monkeypatch, 0.2)
+    await write_all(client, reference, INITIAL[:1])
+    await asyncio.sleep(0.05)  # replica is now inside the slow fsync of seq 1
+    await replica.replica.disconnect()
+    replica.replica.connect()  # reconnects while seq 1 may still be finishing
+    monkeypatch.undo()
+
+    last = await write_all(client, reference, INITIAL[1:] + DURING_OUTAGE)
+    await wait_for_seq(replica, last)
+    assert replica.store.index.state() == reference.state()
+
+
+async def test_client_deadline_does_not_fail_the_primary(cluster, monkeypatch) -> None:
+    """A Write whose client deadline expires during the fsync still completes."""
+    primary, _, client, _, _ = cluster
+    slow_appends(primary, monkeypatch, 0.3)
+    request = operation_to_write_request(ins("a", 1, "x"))
+    with pytest.raises(grpc.aio.AioRpcError) as err:
+        await client.stub.Write(request, timeout=0.05)
+    assert err.value.code() is grpc.StatusCode.DEADLINE_EXCEEDED
+    monkeypatch.undo()
+
+    reply = await client.write(ins("b", 1, "y"))  # store not failed; seq 1 was kept
+    assert (reply.seq, reply.applied) == (2, True)
+    assert primary.store.index.get("a") is not None

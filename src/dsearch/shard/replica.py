@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import grpc
 
 from dsearch.proto import search_pb2, search_pb2_grpc
-from dsearch.shard.store import ShardStore, StoreFailedError
+from dsearch.shard.store import SeqMismatchError, ShardStore, StoreFailedError
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,8 @@ class Replica:
                     self.replica_id, self.primary_address, self.store.applied_seq,
                     exc.code().name, exc.details(),
                 )
-            except SeqGapError as exc:
+            except (SeqGapError, SeqMismatchError) as exc:
+                # e.g. a write cancelled by disconnect() finished after we reconnected (D-021)
                 log.warning("replica=%s: %s; reconnecting", self.replica_id, exc)
             except StoreFailedError:
                 log.error("replica=%s: local store failed; stopping replication", self.replica_id)
