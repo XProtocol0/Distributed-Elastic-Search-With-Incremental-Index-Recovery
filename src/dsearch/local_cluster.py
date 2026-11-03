@@ -103,7 +103,8 @@ class LocalCluster:
         return f"127.0.0.1:{self.coordinator.port}"
 
     async def wait_replicated(self, timeout: float = 10.0) -> None:
-        """Wait until every running replica has applied everything its primary has."""
+        """Wait until every running, connected replica has applied everything its
+        primary has. Replicas deliberately disconnected (D-016) are skipped."""
         waits = []
         for copies in self.shards:
             primary = copies[0]
@@ -111,7 +112,7 @@ class LocalCluster:
                 continue
             target = primary.store.applied_seq
             for replica in copies[1:]:
-                if replica is not None:
+                if replica is not None and replica.replica is not None and replica.replica.is_connected:
                     waits.append(replica.store.wait_for_applied_beyond(target - 1))
         await asyncio.wait_for(asyncio.gather(*waits), timeout)
 
