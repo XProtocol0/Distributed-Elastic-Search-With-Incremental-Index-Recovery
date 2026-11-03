@@ -26,6 +26,8 @@ def test_env_overrides_defaults() -> None:
             "DSEARCH_RPC_TIMEOUT": "2.5",
             "DSEARCH_KEEPALIVE_TIME": "1.5",
             "DSEARCH_KEEPALIVE_TIMEOUT": "0.5",
+            "DSEARCH_LOG_RETENTION": "100",
+            "DSEARCH_FORCE_FULL_REBUILD": "true",
         }
     )
     assert config.role is Role.REPLICA
@@ -36,6 +38,7 @@ def test_env_overrides_defaults() -> None:
     assert config.search_preference is SearchPreference.ROUND_ROBIN
     assert config.rpc_timeout == 2.5
     assert (config.keepalive_time, config.keepalive_timeout) == (1.5, 0.5)
+    assert (config.log_retention, config.force_full_rebuild) == (100, True)
     assert config.node_data_dir == Path("/tmp/x/shard1-replica2")
 
 
@@ -72,6 +75,9 @@ def test_env_beats_file(tmp_path: Path) -> None:
         {"DSEARCH_SNAPSHOT_EVERY": "-1"},
         {"DSEARCH_KEEPALIVE_TIME": "0"},
         {"DSEARCH_KEEPALIVE_TIMEOUT": "-1"},
+        {"DSEARCH_LOG_RETENTION": "-5"},
+        {"DSEARCH_LOG_RETENTION": "10", "DSEARCH_SNAPSHOT_EVERY": "0"},  # truncation needs snapshots
+        {"DSEARCH_FORCE_FULL_REBUILD": "maybe"},
         {"DSEARCH_SEARCH_PREFERENCE": "replicas_only"},
         {"DSEARCH_RPC_TIMEOUT": "0"},
         {"DSEARCH_ROLE": "leader"},

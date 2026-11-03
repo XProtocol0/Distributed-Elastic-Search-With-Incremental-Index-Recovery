@@ -6,6 +6,11 @@ it, entries arrive live. If the stream breaks for any reason, the replica
 reconnects from its persisted applied_seq, so only missed entries are
 replayed. Any unexpected seq drops the stream (D-015). The channel uses
 keepalive, so a silent partition also breaks the stream (D-024).
+
+If the primary answers OUT_OF_RANGE (its log no longer holds the entries
+after our applied_seq, D-030), the next session is a full rebuild: fetch the
+primary's state at some seq S, install it, then replicate from S as usual
+(D-031). Every full rebuild is logged and counted (Invariant 8).
 """
 
 from __future__ import annotations
@@ -17,8 +22,10 @@ from dataclasses import dataclass
 
 import grpc
 
+from dsearch.index.inverted_index import DocState
 from dsearch.proto import search_pb2, search_pb2_grpc
 from dsearch.shard.store import SeqMismatchError, ShardStore, StoreFailedError
+from dsearch.wire import state_from_proto
 
 log = logging.getLogger(__name__)
 
@@ -33,8 +40,10 @@ class RecoveryRecord:
 
     from_seq: int
     caught_up_seq: int
-    entries_replayed: int
+    entries_replayed: int  # log entries applied (after the snapshot, for a full rebuild)
     seconds: float
+    full_rebuild: bool = False
+    snapshot_docs: int = 0
 
 
 class Replica:
@@ -45,6 +54,7 @@ class Replica:
         replica_id: str,
         retry_delay: float = 0.5,
         channel_options: list[tuple[str, int]] | None = None,
+        force_full_rebuild: bool = False,
     ) -> None:
         self.store = store
         self.primary_address = primary_address
@@ -53,7 +63,9 @@ class Replica:
         self.channel_options = channel_options or []
         self.live = False  # past the caught_up marker on the current stream
         self.recoveries: list[RecoveryRecord] = []
-        self.full_rebuilds = 0  # stays 0 until the Phase 7 full-rebuild path exists
+        self.full_rebuilds = 0
+        # Why the next session must start with a full rebuild, or None (D-031, D-032).
+        self._rebuild_reason: str | None = "forced (evaluation baseline)" if force_full_rebuild else None
         self._task: asyncio.Task[None] | None = None
         self._recovered = asyncio.Condition()  # notified when a catch-up session completes
 
@@ -93,6 +105,8 @@ class Replica:
                 await self._replicate_once()
                 log.warning("replica=%s: primary ended the stream", self.replica_id)
             except grpc.aio.AioRpcError as exc:
+                if exc.code() is grpc.StatusCode.OUT_OF_RANGE:
+                    self._rebuild_reason = f"primary log truncated past applied_seq={self.store.applied_seq}"
                 log.warning(
                     "replica=%s: stream from %s failed at applied_seq=%d: %s %s",
                     self.replica_id, self.primary_address, self.store.applied_seq,
@@ -113,29 +127,63 @@ class Replica:
         from_seq = self.store.applied_seq
         started = time.monotonic()
         replayed = 0
-        log.info("replica=%s requesting entries after seq=%d from %s", self.replica_id, from_seq, self.primary_address)
+        snapshot_docs = 0
+        full_rebuild = self._rebuild_reason is not None
         async with grpc.aio.insecure_channel(self.primary_address, options=self.channel_options) as channel:
-            stream = search_pb2_grpc.ShardStub(channel).Replicate(
-                search_pb2.ReplicateRequest(replica_id=self.replica_id, from_seq=from_seq)
+            stub = search_pb2_grpc.ShardStub(channel)
+            if full_rebuild:
+                snapshot_docs = await self._full_rebuild(stub)
+            log.info(
+                "replica=%s requesting entries after seq=%d from %s",
+                self.replica_id, self.store.applied_seq, self.primary_address,
+            )
+            stream = stub.Replicate(
+                search_pb2.ReplicateRequest(replica_id=self.replica_id, from_seq=self.store.applied_seq)
             )
             async for message in stream:
-                if message.HasField("entry"):
-                    entry = message.entry
+                if message.HasField("entries"):
+                    entries = list(message.entries.entries)
                     expected = self.store.applied_seq + 1
-                    if entry.seq != expected:
-                        raise SeqGapError(f"received seq={entry.seq}, expected seq={expected}")
-                    result = await self.store.write(entry)
-                    replayed += 1
-                    log.debug("replica=%s applied seq=%d -> %s", self.replica_id, entry.seq, result.value)
+                    if [e.seq for e in entries] != list(range(expected, expected + len(entries))):
+                        raise SeqGapError(
+                            f"received seq={entries[0].seq}..{entries[-1].seq}, expected from seq={expected}"
+                        )
+                    await self.store.write_batch(entries)  # one group commit per message (D-034)
+                    replayed += len(entries)
+                    log.debug("replica=%s applied seq=%d..%d", self.replica_id, entries[0].seq, entries[-1].seq)
                 else:
                     record = RecoveryRecord(
-                        from_seq, message.caught_up_seq, replayed, time.monotonic() - started
+                        from_seq, message.caught_up_seq, replayed, time.monotonic() - started,
+                        full_rebuild, snapshot_docs,
                     )
                     self.recoveries.append(record)
                     self.live = True
                     async with self._recovered:
                         self._recovered.notify_all()
                     log.info(
-                        "replica=%s caught up: replayed seq=%d..%d (%d entries) in %.3fs",
-                        self.replica_id, from_seq + 1, record.caught_up_seq, replayed, record.seconds,
+                        "replica=%s caught up%s: replayed seq=%d..%d (%d entries) in %.3fs",
+                        self.replica_id, " after full rebuild" if full_rebuild else "",
+                        record.caught_up_seq - replayed + 1, record.caught_up_seq, replayed, record.seconds,
                     )
+
+    async def _full_rebuild(self, stub: search_pb2_grpc.ShardStub) -> int:
+        """Replace local state with the primary's snapshot; returns the doc count."""
+        log.warning(
+            "replica=%s FULL REBUILD at applied_seq=%d: %s",
+            self.replica_id, self.store.applied_seq, self._rebuild_reason,
+        )
+        seq = None
+        docs: dict[str, DocState] = {}
+        async for chunk in stub.FetchSnapshot(search_pb2.FetchSnapshotRequest(replica_id=self.replica_id)):
+            seq = chunk.seq
+            docs.update(state_from_proto(chunk.docs))
+        if seq is None:
+            raise SeqGapError("primary sent an empty snapshot stream")
+        await self.store.install_snapshot(seq, docs)
+        self.full_rebuilds += 1
+        self._rebuild_reason = None
+        log.warning(
+            "replica=%s full rebuild #%d installed %d docs at seq=%d",
+            self.replica_id, self.full_rebuilds, len(docs), seq,
+        )
+        return len(docs)

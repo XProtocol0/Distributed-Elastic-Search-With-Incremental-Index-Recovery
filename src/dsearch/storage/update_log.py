@@ -4,6 +4,11 @@ On-disk record (D-008): [u32 length][u32 crc32(payload)][payload], big-endian,
 where payload is a serialised `LogEntry`. Seqs are dense: each append must
 carry `last_seq + 1`. A byte-offset list gives O(1) access by seq (D-009).
 
+The log may start after seq 1: `truncate_through` drops old entries after a
+snapshot (D-030) and `reset` empties it for a snapshot install (D-031). The
+first record's seq says where the log starts; an empty log starts after the
+`base_seq` its owner passes in (the snapshot seq).
+
 Blocking file I/O happens in the `*_sync` methods. Async callers use the
 async wrappers, which run them in a worker thread.
 """
@@ -14,6 +19,7 @@ import asyncio
 import logging
 import os
 import struct
+import threading
 import zlib
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -32,19 +38,27 @@ class CorruptLogError(Exception):
     """A checksummed record holds the wrong seq: a bug, not a torn write."""
 
 
+class LogTruncatedError(Exception):
+    """The requested entries were dropped by truncation (D-030)."""
+
+
 class UpdateLog:
-    def __init__(self, path: Path, file: BinaryIO, offsets: list[int], end_offset: int) -> None:
+    def __init__(
+        self, path: Path, file: BinaryIO, first_seq: int, offsets: list[int], end_offset: int
+    ) -> None:
         self.path = path
         self._file = file  # opened "r+b", positioned at end_offset
+        self.first_seq = first_seq  # seq of the first record (or of the next append, if empty)
         self._offsets = offsets  # offsets[i] = byte offset of seq first_seq + i
         self._end_offset = end_offset
-        self.first_seq = 1  # no truncation yet (D-011)
+        self._lock = threading.Lock()  # readers vs. truncate/reset replacing the file
 
     # ---- open / close ---------------------------------------------------
 
     @classmethod
-    def open_sync(cls, path: Path) -> "UpdateLog":
-        """Open (or create) the log, dropping a torn or corrupt tail."""
+    def open_sync(cls, path: Path, base_seq: int = 0) -> "UpdateLog":
+        """Open (or create) the log, dropping a torn or corrupt tail. An empty
+        log starts at `base_seq + 1`."""
         path.parent.mkdir(parents=True, exist_ok=True)
         created = not path.exists()
         if created:
@@ -52,7 +66,7 @@ class UpdateLog:
             _fsync_dir(path.parent)
 
         file = open(path, "r+b")
-        offsets, valid_end = _scan(file, path)
+        first_seq, offsets, valid_end = _scan(file, path, base_seq + 1)
         file_size = os.fstat(file.fileno()).st_size
         if valid_end < file_size:
             log.warning(
@@ -62,11 +76,11 @@ class UpdateLog:
             file.truncate(valid_end)
             os.fsync(file.fileno())
         file.seek(valid_end)
-        return cls(path, file, offsets, valid_end)
+        return cls(path, file, first_seq, offsets, valid_end)
 
     @classmethod
-    async def open(cls, path: Path) -> "UpdateLog":
-        return await asyncio.to_thread(cls.open_sync, path)
+    async def open(cls, path: Path, base_seq: int = 0) -> "UpdateLog":
+        return await asyncio.to_thread(cls.open_sync, path, base_seq)
 
     def close(self) -> None:
         self._file.close()
@@ -99,19 +113,51 @@ class UpdateLog:
     async def append(self, entry: search_pb2.LogEntry) -> None:
         await asyncio.to_thread(self.append_sync, entry)
 
+    def append_batch_sync(self, entries: list[search_pb2.LogEntry]) -> None:
+        """Write consecutive entries with a single fsync (group commit, D-034).
+        A crash before the fsync can leave any prefix of them: a torn tail."""
+        for i, entry in enumerate(entries):
+            if entry.seq != self.last_seq + 1 + i:
+                raise ValueError(f"append seq={entry.seq}, expected seq={self.last_seq + 1 + i}")
+        records = []
+        offsets = []
+        offset = self._end_offset
+        for entry in entries:
+            payload = entry.SerializeToString()
+            record = _HEADER.pack(len(payload), zlib.crc32(payload)) + payload
+            records.append(record)
+            offsets.append(offset)
+            offset += len(record)
+        self._file.write(b"".join(records))
+        self._file.flush()
+        os.fsync(self._file.fileno())
+        self._offsets.extend(offsets)
+        self._end_offset = offset
+
+    async def append_batch(self, entries: list[search_pb2.LogEntry]) -> None:
+        await asyncio.to_thread(self.append_batch_sync, entries)
+
     # ---- read -----------------------------------------------------------
 
     def read_after_sync(self, after_seq: int, max_entries: int) -> list[search_pb2.LogEntry]:
-        """Up to `max_entries` entries with seq > after_seq, in seq order."""
-        start_seq = max(after_seq + 1, self.first_seq)
-        end_seq = min(self.last_seq, start_seq + max_entries - 1)
-        if start_seq > end_seq:
-            return []
-        start = self._offsets[start_seq - self.first_seq]
-        end = self._offset_after(end_seq)
-        with open(self.path, "rb") as reader:
-            reader.seek(start)
-            data = reader.read(end - start)
+        """Up to `max_entries` entries with seq > after_seq, in seq order.
+
+        Raises LogTruncatedError if seq after_seq + 1 has been truncated away.
+        """
+        with self._lock:
+            if after_seq + 1 < self.first_seq:
+                raise LogTruncatedError(
+                    f"{self.path}: entries after seq={after_seq} requested, log starts at seq={self.first_seq}"
+                )
+            start_seq = after_seq + 1
+            end_seq = min(self.last_seq, start_seq + max_entries - 1)
+            if start_seq > end_seq:
+                return []
+            start = self._offsets[start_seq - self.first_seq]
+            end = self._offset_after(end_seq)
+            with open(self.path, "rb") as reader:
+                reader.seek(start)
+                data = reader.read(end - start)
 
         entries = []
         pos = 0
@@ -135,17 +181,65 @@ class UpdateLog:
                 yield entry
             next_seq = batch[-1].seq
 
+    # ---- truncation (D-030) and reset (D-031) ---------------------------
+
+    def truncate_through_sync(self, seq: int) -> int:
+        """Drop every entry with seq <= `seq` (at least one entry is always kept).
+        Returns the number of entries dropped."""
+        seq = min(seq, self.last_seq - 1)
+        drop = seq - self.first_seq + 1
+        if drop <= 0:
+            return 0
+        cut = self._offsets[drop]
+        with self._lock:
+            with open(self.path, "rb") as reader:
+                reader.seek(cut)
+                tail = reader.read(self._end_offset - cut)
+            self._replace_file(tail)
+            self._offsets = [offset - cut for offset in self._offsets[drop:]]
+            self.first_seq = seq + 1
+        return drop
+
+    async def truncate_through(self, seq: int) -> int:
+        return await asyncio.to_thread(self.truncate_through_sync, seq)
+
+    def reset_sync(self, base_seq: int) -> None:
+        """Empty the log; the next append must be seq `base_seq + 1`."""
+        with self._lock:
+            self._replace_file(b"")
+            self._offsets = []
+            self.first_seq = base_seq + 1
+
+    async def reset(self, base_seq: int) -> None:
+        await asyncio.to_thread(self.reset_sync, base_seq)
+
+    def _replace_file(self, content: bytes) -> None:
+        """Atomically make `content` the whole log file (temp file, fsync, rename)."""
+        temp = self.path.with_suffix(self.path.suffix + ".tmp")
+        with open(temp, "wb") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, self.path)
+        _fsync_dir(self.path.parent)
+        self._file.close()
+        self._file = open(self.path, "r+b")
+        self._file.seek(len(content))
+        self._end_offset = len(content)
+
     def _offset_after(self, seq: int) -> int:
         index = seq - self.first_seq + 1
         return self._offsets[index] if index < len(self._offsets) else self._end_offset
 
 
-def _scan(file: BinaryIO, path: Path) -> tuple[list[int], int]:
-    """Return offsets of valid records and the byte offset where validity ends."""
+def _scan(file: BinaryIO, path: Path, empty_first_seq: int) -> tuple[int, list[int], int]:
+    """Return the first seq, offsets of valid records and the byte offset where
+    validity ends. Seqs must be dense from the first record on."""
     data = file.read()
     offsets: list[int] = []
     pos = 0
-    expected_seq = 1
+    first_seq: int | None = None
+    expected_seq = 0
     while pos + _HEADER.size <= len(data):
         length, crc = _HEADER.unpack_from(data, pos)
         payload = data[pos + _HEADER.size : pos + _HEADER.size + length]
@@ -156,6 +250,8 @@ def _scan(file: BinaryIO, path: Path) -> tuple[list[int], int]:
             entry.ParseFromString(payload)
         except DecodeError:
             break
+        if first_seq is None:
+            first_seq = expected_seq = entry.seq
         if entry.seq != expected_seq:
             raise CorruptLogError(
                 f"{path}: found seq={entry.seq} at byte {pos}, expected seq={expected_seq}"
@@ -163,7 +259,7 @@ def _scan(file: BinaryIO, path: Path) -> tuple[list[int], int]:
         offsets.append(pos)
         pos += _HEADER.size + length
         expected_seq += 1
-    return offsets, pos
+    return (empty_first_seq if first_seq is None else first_seq), offsets, pos
 
 
 def _fsync_dir(directory: Path) -> None:

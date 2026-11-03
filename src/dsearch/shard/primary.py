@@ -13,7 +13,9 @@ from collections.abc import AsyncIterator
 
 from dsearch.index.operation import ApplyResult, Operation
 from dsearch.proto import search_pb2
+from dsearch.wire import state_to_proto
 from dsearch.shard.store import ShardStore
+from dsearch.storage.update_log import LogTruncatedError
 
 log = logging.getLogger(__name__)
 
@@ -23,9 +25,10 @@ class ReplicaAheadError(Exception):
 
 
 class Primary:
-    def __init__(self, store: ShardStore, batch_size: int = 500) -> None:
+    def __init__(self, store: ShardStore, batch_size: int = 500, batch_bytes: int = 1 << 20) -> None:
         self.store = store
-        self.batch_size = batch_size
+        self.batch_size = batch_size  # entries per log read and per message
+        self.batch_bytes = batch_bytes  # message size cap, well under gRPC's 4 MB limit
 
     async def write(self, op: Operation) -> tuple[int, ApplyResult]:
         """Assign the next seq to `op`, make it durable and apply it."""
@@ -44,6 +47,12 @@ class Primary:
         if from_seq > target:
             raise ReplicaAheadError(
                 f"replica={replica_id} from_seq={from_seq} is ahead of primary applied_seq={target}"
+            )
+        if from_seq + 1 < self.store.update_log.first_seq:
+            # Reads would raise this too; checking first gives a clear log line (D-030).
+            raise LogTruncatedError(
+                f"replica={replica_id} needs entries after seq={from_seq}, "
+                f"log starts at seq={self.store.update_log.first_seq}"
             )
         log.info(
             "replica=%s connected from_seq=%d: catch-up seq=%d..%d (%d entries)",
@@ -64,7 +73,43 @@ class Primary:
             if not batch:
                 await self.store.wait_for_applied_beyond(next_seq)
                 continue
-            for entry in batch:
-                log.debug("replica=%s send seq=%d", replica_id, entry.seq)
-                yield search_pb2.ReplicateMessage(entry=entry)
+            for message in self._messages(batch):
+                log.debug(
+                    "replica=%s send seq=%d..%d", replica_id,
+                    message.entries.entries[0].seq, message.entries.entries[-1].seq,
+                )
+                yield message
             next_seq = batch[-1].seq
+
+    def _messages(self, batch: list[search_pb2.LogEntry]) -> list[search_pb2.ReplicateMessage]:
+        """Split consecutive entries into messages of at most `batch_bytes` (D-034)."""
+        messages = []
+        current = search_pb2.ReplicateMessage()
+        size = 0
+        for entry in batch:
+            if current.entries.entries and size + entry.ByteSize() > self.batch_bytes:
+                messages.append(current)
+                current = search_pb2.ReplicateMessage()
+                size = 0
+            current.entries.entries.append(entry)
+            size += entry.ByteSize()
+        messages.append(current)
+        return messages
+
+    async def snapshot_chunks(
+        self, replica_id: str, chunk_bytes: int = 1 << 20
+    ) -> AsyncIterator[search_pb2.SnapshotChunk]:
+        """The whole shard state at one seq, for a replica's full rebuild (D-031),
+        in chunks of about `chunk_bytes` (well under gRPC's 4 MB message limit)."""
+        seq, docs = await self.store.consistent_state()
+        log.warning("replica=%s full rebuild: sending snapshot at seq=%d (%d docs)", replica_id, seq, len(docs))
+        chunk = search_pb2.SnapshotChunk(seq=seq)
+        size = 0
+        for record in state_to_proto(docs):
+            if chunk.docs and size + record.ByteSize() > chunk_bytes:
+                yield chunk
+                chunk = search_pb2.SnapshotChunk(seq=seq)
+                size = 0
+            chunk.docs.append(record)
+            size += record.ByteSize()
+        yield chunk  # always at least one, so an empty shard still sends its seq

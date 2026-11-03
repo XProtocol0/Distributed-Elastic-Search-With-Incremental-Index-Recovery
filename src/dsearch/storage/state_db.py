@@ -73,8 +73,10 @@ class StateDB:
     def snapshot_seq_sync(self) -> int:
         return self._get_meta("snapshot_seq")
 
-    def write_snapshot_sync(self, seq: int, docs: dict[str, DocState]) -> None:
-        """Replace the stored snapshot with `docs` as of `seq`, in one transaction."""
+    def write_snapshot_sync(self, seq: int, docs: dict[str, DocState], set_applied: bool = False) -> None:
+        """Replace the stored snapshot with `docs` as of `seq`, in one transaction.
+        With `set_applied`, applied_seq is set to `seq` in the same transaction
+        (installing a snapshot fetched from the primary, D-031)."""
         with self._lock:
             conn = self._conn
             conn.execute("BEGIN IMMEDIATE")
@@ -89,13 +91,19 @@ class StateDB:
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     (seq,),
                 )
+                if set_applied:
+                    conn.execute(
+                        "INSERT INTO meta(key, value) VALUES ('applied_seq', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (seq,),
+                    )
                 conn.execute("COMMIT")
             except BaseException:
                 conn.execute("ROLLBACK")
                 raise
 
-    async def write_snapshot(self, seq: int, docs: dict[str, DocState]) -> None:
-        await asyncio.to_thread(self.write_snapshot_sync, seq, docs)
+    async def write_snapshot(self, seq: int, docs: dict[str, DocState], set_applied: bool = False) -> None:
+        await asyncio.to_thread(self.write_snapshot_sync, seq, docs, set_applied)
 
     def load_snapshot_sync(self) -> tuple[int, dict[str, DocState]]:
         """Return (snapshot_seq, docs); (0, {}) if no snapshot was ever taken."""

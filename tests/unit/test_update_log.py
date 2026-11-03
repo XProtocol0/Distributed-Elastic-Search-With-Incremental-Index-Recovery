@@ -7,7 +7,7 @@ import pytest
 from dsearch.index.operation import Operation, OpType
 from dsearch.proto import search_pb2
 from dsearch.storage.log_entry import entry_to_operation, make_entry
-from dsearch.storage.update_log import CorruptLogError, UpdateLog
+from dsearch.storage.update_log import CorruptLogError, LogTruncatedError, UpdateLog
 
 
 def entry(seq: int) -> search_pb2.LogEntry:
@@ -94,6 +94,57 @@ def test_wrong_seq_with_valid_checksum_refuses_to_open(tmp_path: Path) -> None:
         f.write(struct.pack(">II", len(payload), zlib.crc32(payload)) + payload)
     with pytest.raises(CorruptLogError, match="seq=7"):
         UpdateLog.open_sync(path)
+
+
+# ---- truncation and reset (D-030, D-031) --------------------------------
+
+
+def test_truncate_keeps_the_tail_and_survives_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "u.log"
+    log = filled_log(path, 10)
+    size_before = log.size_bytes
+    assert log.truncate_through_sync(6) == 6
+    assert (log.first_seq, log.last_seq) == (7, 10)
+    assert log.size_bytes < size_before
+    assert [e.seq for e in log.read_after_sync(6, 100)] == [7, 8, 9, 10]
+    assert log.read_after_sync(8, 1) == [entry(9)]
+    log.append_sync(entry(11))
+    log.close()
+
+    reopened = UpdateLog.open_sync(path)  # first seq comes from the first record
+    assert (reopened.first_seq, reopened.last_seq) == (7, 11)
+    assert [e.seq for e in reopened.read_after_sync(6, 100)] == [7, 8, 9, 10, 11]
+    assert not (tmp_path / "u.log.tmp").exists()
+
+
+def test_reading_a_truncated_range_raises(tmp_path: Path) -> None:
+    log = filled_log(tmp_path / "u.log", 10)
+    log.truncate_through_sync(4)
+    with pytest.raises(LogTruncatedError):
+        log.read_after_sync(3, 10)  # seq 4 is gone
+    assert [e.seq for e in log.read_after_sync(4, 2)] == [5, 6]  # seq 5 onwards is fine
+
+
+def test_truncate_never_empties_the_log(tmp_path: Path) -> None:
+    log = filled_log(tmp_path / "u.log", 5)
+    assert log.truncate_through_sync(100) == 4
+    assert (log.first_seq, log.last_seq) == (5, 5)
+    assert log.truncate_through_sync(3) == 0  # already gone: no-op
+
+
+def test_reset_and_empty_log_start_after_base_seq(tmp_path: Path) -> None:
+    path = tmp_path / "u.log"
+    log = filled_log(path, 5)
+    log.reset_sync(40)
+    assert (log.first_seq, log.last_seq, log.size_bytes) == (41, 40, 0)
+    with pytest.raises(ValueError):
+        log.append_sync(entry(6))
+    log.append_sync(entry(41))
+    log.close()
+    assert UpdateLog.open_sync(path, base_seq=40).last_seq == 41
+    (tmp_path / "e.log").touch()
+    empty = UpdateLog.open_sync(tmp_path / "e.log", base_seq=40)
+    assert (empty.first_seq, empty.last_seq) == (41, 40)
 
 
 def test_entry_conversion_round_trip() -> None:

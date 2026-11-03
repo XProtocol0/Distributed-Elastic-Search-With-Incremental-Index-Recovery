@@ -43,6 +43,7 @@ class LocalCluster:
         replicas_per_shard: int,
         search_preference: SearchPreference = SearchPreference.PRIMARY,
         snapshot_every: int = 0,
+        log_retention: int = 0,
     ) -> "LocalCluster":
         ports = [[free_port() for _ in range(replicas_per_shard + 1)] for _ in range(num_shards)]
         topology = tuple(
@@ -58,6 +59,7 @@ class LocalCluster:
             replicas_per_shard=replicas_per_shard,
             data_dir=data_dir,
             snapshot_every=snapshot_every,
+            log_retention=log_retention,
             search_preference=search_preference,
             shards=topology,
         )

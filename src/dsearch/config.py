@@ -50,6 +50,8 @@ class Config:
     data_dir: Path = Path("data")
     log_level: str = "INFO"
     snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off (D-011)
+    log_retention: int = 0  # log entries kept behind each snapshot; 0 = never truncate (D-030)
+    force_full_rebuild: bool = False  # replica: full rebuild on first connect; evaluation only (D-032)
     search_preference: SearchPreference = SearchPreference.PRIMARY
     rpc_timeout: float = 5.0  # seconds, per coordinator-to-shard call
     keepalive_time: float = 5.0  # seconds between HTTP/2 pings on an idle connection (D-024)
@@ -70,6 +72,17 @@ class ConfigError(ValueError):
     pass
 
 
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"not a boolean: {value!r}")
+
+
 # Env var name -> (config field, parser). Topology is file-only.
 _ENV_FIELDS: dict[str, tuple[str, Any]] = {
     "DSEARCH_NODE_ID": ("node_id", str),
@@ -82,6 +95,8 @@ _ENV_FIELDS: dict[str, tuple[str, Any]] = {
     "DSEARCH_DATA_DIR": ("data_dir", Path),
     "DSEARCH_LOG_LEVEL": ("log_level", str.upper),
     "DSEARCH_SNAPSHOT_EVERY": ("snapshot_every", int),
+    "DSEARCH_LOG_RETENTION": ("log_retention", int),
+    "DSEARCH_FORCE_FULL_REBUILD": ("force_full_rebuild", _parse_bool),
     "DSEARCH_SEARCH_PREFERENCE": ("search_preference", SearchPreference),
     "DSEARCH_RPC_TIMEOUT": ("rpc_timeout", float),
     "DSEARCH_KEEPALIVE_TIME": ("keepalive_time", float),
@@ -151,6 +166,10 @@ def _validate(config: Config) -> None:
         raise ConfigError("replicas_per_shard must not be negative")
     if config.snapshot_every < 0:
         raise ConfigError("snapshot_every must not be negative")
+    if config.log_retention < 0:
+        raise ConfigError("log_retention must not be negative")
+    if config.log_retention and not config.snapshot_every:
+        raise ConfigError("log_retention needs snapshot_every > 0 (truncation happens after snapshots)")
     if config.rpc_timeout <= 0:
         raise ConfigError("rpc_timeout must be positive")
     if config.keepalive_time <= 0 or config.keepalive_timeout <= 0:

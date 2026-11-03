@@ -60,6 +60,11 @@ service Shard {
 
   // Replication and recovery status of this copy, for scripts and evaluation (D-025).
   rpc GetStatus(StatusRequest) returns (StatusReply);
+
+  // Full rebuild (D-031): the primary's whole state at one seq, in chunks.
+  // Used only when Replicate answers OUT_OF_RANGE (log truncated past the
+  // replica's applied_seq, D-030) or when the replica is forced to (D-032).
+  rpc FetchSnapshot(FetchSnapshotRequest) returns (stream SnapshotChunk);
 }
 
 message WriteRequest {
@@ -80,10 +85,15 @@ message ReplicateRequest {
 }
 
 message ReplicateMessage {
+  reserved 1;  // was a single LogEntry before batching (D-034)
   oneof kind {
-    LogEntry entry = 1;
     uint64 caught_up_seq = 2;  // all entries up to here have been sent
+    EntryBatch entries = 3;    // consecutive entries, written by the replica as one group commit
   }
+}
+
+message EntryBatch {
+  repeated LogEntry entries = 1;
 }
 
 message StatsRequest {
@@ -127,12 +137,23 @@ message DumpStateReply {
 
 message StatusRequest {}
 
+message FetchSnapshotRequest {
+  string replica_id = 1;
+}
+
+message SnapshotChunk {
+  uint64 seq = 1;                 // the snapshot's seq, the same in every chunk
+  repeated DocRecord docs = 2;    // live docs and tombstones
+}
+
 // One replica catch-up session: from connecting until the caught_up_seq marker.
 message RecoverySession {
   uint64 from_seq = 1;
   uint64 caught_up_seq = 2;
-  uint64 entries_replayed = 3;
+  uint64 entries_replayed = 3;    // log entries applied (after the snapshot, for a full rebuild)
   double seconds = 4;
+  bool full_rebuild = 5;          // started with FetchSnapshot instead of replaying from from_seq
+  uint64 snapshot_docs = 6;       // docs installed by the full rebuild
 }
 
 message StatusReply {
@@ -146,6 +167,8 @@ message StatusReply {
   bool live = 8;                 // replica: past the caught_up marker on a live stream
   repeated RecoverySession recoveries = 9;  // replica: since this process started
   uint32 full_rebuilds = 10;
+  uint64 first_logged_seq = 11;  // older entries were truncated (D-030)
+  double open_seconds = 12;      // local snapshot load + log replay at startup
 }
 
 // ---- Coordinator (client entry point) ---------------------------------

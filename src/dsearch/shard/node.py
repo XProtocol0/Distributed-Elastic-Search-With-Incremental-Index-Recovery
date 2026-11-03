@@ -39,12 +39,13 @@ class ShardNode:
         """Open the node's store, start serving, and (replicas) start pulling."""
         if config.role not in (Role.PRIMARY, Role.REPLICA):
             raise ConfigError(f"a shard node needs role primary or replica, got {config.role.value}")
-        store = await ShardStore.open(config.node_data_dir, config.snapshot_every)
+        store = await ShardStore.open(config.node_data_dir, config.snapshot_every, config.log_retention)
         primary = Primary(store) if config.role is Role.PRIMARY else None
         replica = None
         if config.role is Role.REPLICA:
             replica = Replica(
-                store, primary_address(config), config.node_id, replica_retry_delay, channel_options(config)
+                store, primary_address(config), config.node_id, replica_retry_delay, channel_options(config),
+                force_full_rebuild=config.force_full_rebuild,
             )
 
         server, port = create_server(config)
