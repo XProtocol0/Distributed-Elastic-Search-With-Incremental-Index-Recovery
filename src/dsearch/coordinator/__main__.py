@@ -7,6 +7,7 @@ import asyncio
 from dsearch.config import load_config
 from dsearch.coordinator.server import CoordinatorNode
 from dsearch.logging_setup import configure_logging
+from dsearch.node_server import wait_for_shutdown_signal
 
 
 async def main() -> None:
@@ -14,7 +15,7 @@ async def main() -> None:
     configure_logging(config)
     node = await CoordinatorNode.start(config)
     try:
-        await node.server.wait_for_termination()
+        await wait_for_shutdown_signal()
     finally:
         await node.stop()
 

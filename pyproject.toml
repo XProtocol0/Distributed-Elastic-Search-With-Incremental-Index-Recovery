@@ -24,6 +24,9 @@ eval = [
     "pandas>=2.1",
     "matplotlib>=3.8",
 ]
+data = [
+    "pyarrow>=15",  # reads the Wikipedia parquet in scripts/prepare_corpus.py (D-026)
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -31,6 +34,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m 'not docker'"  # `pytest -m docker` runs the Docker Compose tests
 markers = [
     "docker: needs a running Docker Compose cluster (skipped when Docker is unavailable)",
 ]

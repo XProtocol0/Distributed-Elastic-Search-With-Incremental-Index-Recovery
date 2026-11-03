@@ -1,0 +1,23 @@
+# Cluster topology used by docker-compose.yml. Each container sets its own
+# identity (DSEARCH_NODE_ID, DSEARCH_ROLE, DSEARCH_SHARD_ID) with env vars,
+# which override values here (D-002). Hostnames are Compose service names.
+
+num_shards = 3
+replicas_per_shard = 2
+data_dir = "/data"
+log_level = "INFO"
+
+[[shards]]
+id = 0
+primary = "shard0-primary:50051"
+replicas = ["shard0-replica1:50051", "shard0-replica2:50051"]
+
+[[shards]]
+id = 1
+primary = "shard1-primary:50051"
+replicas = ["shard1-replica1:50051", "shard1-replica2:50051"]
+
+[[shards]]
+id = 2
+primary = "shard2-primary:50051"
+replicas = ["shard2-replica1:50051", "shard2-replica2:50051"]

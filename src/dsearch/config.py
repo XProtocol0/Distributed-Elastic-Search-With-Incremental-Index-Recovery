@@ -52,6 +52,8 @@ class Config:
     snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off (D-011)
     search_preference: SearchPreference = SearchPreference.PRIMARY
     rpc_timeout: float = 5.0  # seconds, per coordinator-to-shard call
+    keepalive_time: float = 5.0  # seconds between HTTP/2 pings on an idle connection (D-024)
+    keepalive_timeout: float = 5.0  # seconds to wait for a ping ack before dropping the connection
     shards: tuple[ShardTopology, ...] = field(default_factory=tuple)
 
     @property
@@ -82,6 +84,8 @@ _ENV_FIELDS: dict[str, tuple[str, Any]] = {
     "DSEARCH_SNAPSHOT_EVERY": ("snapshot_every", int),
     "DSEARCH_SEARCH_PREFERENCE": ("search_preference", SearchPreference),
     "DSEARCH_RPC_TIMEOUT": ("rpc_timeout", float),
+    "DSEARCH_KEEPALIVE_TIME": ("keepalive_time", float),
+    "DSEARCH_KEEPALIVE_TIMEOUT": ("keepalive_timeout", float),
 }
 
 _FILE_FIELDS: dict[str, Any] = {name: parse for name, parse in _ENV_FIELDS.values()}
@@ -149,6 +153,8 @@ def _validate(config: Config) -> None:
         raise ConfigError("snapshot_every must not be negative")
     if config.rpc_timeout <= 0:
         raise ConfigError("rpc_timeout must be positive")
+    if config.keepalive_time <= 0 or config.keepalive_timeout <= 0:
+        raise ConfigError("keepalive_time and keepalive_timeout must be positive")
     if not 0 < config.port < 65536:
         raise ConfigError(f"port {config.port} out of range")
     if config.role in (Role.PRIMARY, Role.REPLICA):

@@ -1,0 +1,111 @@
+# 1 coordinator + 3 shards x (1 primary + 2 replicas), one image (D-028).
+#
+#   docker compose up -d --build                        # start the cluster
+#   docker compose run --rm tools python scripts/...    # scripts on the cluster network
+#   python scripts/inject_fault.py kill shard1-replica2 # faults, from the host
+#   docker compose down -v                              # stop and wipe all node data
+#
+# Each node has its own named volume, so a killed and restarted node keeps its
+# update log and SQLite state. restart: "no" keeps injected faults in place.
+
+name: dsearch
+
+x-node: &node
+  image: dsearch:latest
+  pull_policy: never
+  restart: "no"
+  stop_grace_period: 5s
+  networks: [cluster]
+
+x-env: &env
+  DSEARCH_CONFIG: /app/config/docker.toml
+  DSEARCH_HOST: 0.0.0.0
+  DSEARCH_PORT: "50051"
+  DSEARCH_LOG_LEVEL: ${DSEARCH_LOG_LEVEL:-INFO}
+
+services:
+  coordinator:
+    <<: *node
+    build: .
+    hostname: coordinator
+    command: ["python", "-m", "dsearch.coordinator"]
+    environment:
+      <<: *env
+      DSEARCH_NODE_ID: coordinator
+      DSEARCH_ROLE: coordinator
+      DSEARCH_SEARCH_PREFERENCE: ${DSEARCH_SEARCH_PREFERENCE:-primary}
+    ports: ["${DSEARCH_COORDINATOR_PORT:-50050}:50051"]
+
+  shard0-primary:
+    <<: *node
+    hostname: shard0-primary
+    environment: { <<: *env, DSEARCH_NODE_ID: shard0-primary, DSEARCH_ROLE: primary, DSEARCH_SHARD_ID: "0" }
+    volumes: ["shard0-primary:/data"]
+  shard0-replica1:
+    <<: *node
+    hostname: shard0-replica1
+    environment: { <<: *env, DSEARCH_NODE_ID: shard0-replica1, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "0" }
+    volumes: ["shard0-replica1:/data"]
+  shard0-replica2:
+    <<: *node
+    hostname: shard0-replica2
+    environment: { <<: *env, DSEARCH_NODE_ID: shard0-replica2, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "0" }
+    volumes: ["shard0-replica2:/data"]
+
+  shard1-primary:
+    <<: *node
+    hostname: shard1-primary
+    environment: { <<: *env, DSEARCH_NODE_ID: shard1-primary, DSEARCH_ROLE: primary, DSEARCH_SHARD_ID: "1" }
+    volumes: ["shard1-primary:/data"]
+  shard1-replica1:
+    <<: *node
+    hostname: shard1-replica1
+    environment: { <<: *env, DSEARCH_NODE_ID: shard1-replica1, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "1" }
+    volumes: ["shard1-replica1:/data"]
+  shard1-replica2:
+    <<: *node
+    hostname: shard1-replica2
+    environment: { <<: *env, DSEARCH_NODE_ID: shard1-replica2, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "1" }
+    volumes: ["shard1-replica2:/data"]
+
+  shard2-primary:
+    <<: *node
+    hostname: shard2-primary
+    environment: { <<: *env, DSEARCH_NODE_ID: shard2-primary, DSEARCH_ROLE: primary, DSEARCH_SHARD_ID: "2" }
+    volumes: ["shard2-primary:/data"]
+  shard2-replica1:
+    <<: *node
+    hostname: shard2-replica1
+    environment: { <<: *env, DSEARCH_NODE_ID: shard2-replica1, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "2" }
+    volumes: ["shard2-replica1:/data"]
+  shard2-replica2:
+    <<: *node
+    hostname: shard2-replica2
+    environment: { <<: *env, DSEARCH_NODE_ID: shard2-replica2, DSEARCH_ROLE: replica, DSEARCH_SHARD_ID: "2" }
+    volumes: ["shard2-replica2:/data"]
+
+  # Runs scripts inside the cluster network, where the topology hostnames
+  # resolve. Not started by `up`; use `docker compose run --rm tools ...`.
+  tools:
+    <<: *node
+    profiles: [tools]
+    working_dir: /app
+    command: ["python", "scripts/cluster_status.py"]
+    environment:
+      <<: *env
+      DSEARCH_COORDINATOR: coordinator:50051
+    volumes: ["./data:/app/data"]
+
+networks:
+  cluster: {}
+
+volumes:
+  shard0-primary: {}
+  shard0-replica1: {}
+  shard0-replica2: {}
+  shard1-primary: {}
+  shard1-replica1: {}
+  shard1-replica2: {}
+  shard2-primary: {}
+  shard2-replica1: {}
+  shard2-replica2: {}

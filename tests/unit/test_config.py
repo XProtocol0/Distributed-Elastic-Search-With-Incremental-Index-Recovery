@@ -5,6 +5,7 @@ import pytest
 from dsearch.config import Config, ConfigError, Role, SearchPreference, load_config
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "config" / "cluster.example.toml"
+DOCKER = Path(__file__).resolve().parents[2] / "config" / "docker.toml"
 
 
 def test_defaults_without_file_or_env() -> None:
@@ -23,6 +24,8 @@ def test_env_overrides_defaults() -> None:
             "DSEARCH_SNAPSHOT_EVERY": "500",
             "DSEARCH_SEARCH_PREFERENCE": "round_robin",
             "DSEARCH_RPC_TIMEOUT": "2.5",
+            "DSEARCH_KEEPALIVE_TIME": "1.5",
+            "DSEARCH_KEEPALIVE_TIMEOUT": "0.5",
         }
     )
     assert config.role is Role.REPLICA
@@ -32,6 +35,7 @@ def test_env_overrides_defaults() -> None:
     assert config.snapshot_every == 500
     assert config.search_preference is SearchPreference.ROUND_ROBIN
     assert config.rpc_timeout == 2.5
+    assert (config.keepalive_time, config.keepalive_timeout) == (1.5, 0.5)
     assert config.node_data_dir == Path("/tmp/x/shard1-replica2")
 
 
@@ -41,6 +45,14 @@ def test_example_file_loads_topology() -> None:
     assert [s.shard_id for s in config.shards] == [0, 1, 2]
     assert config.shards[1].primary == "shard1-primary:50051"
     assert len(config.shards[2].replicas) == 2
+
+
+def test_docker_topology_loads_for_every_node_role() -> None:
+    base = {"DSEARCH_CONFIG": str(DOCKER)}
+    assert len(load_config(base).shards) == 3
+    replica = load_config({**base, "DSEARCH_ROLE": "replica", "DSEARCH_SHARD_ID": "2"})
+    assert replica.shards[2].replicas == ("shard2-replica1:50051", "shard2-replica2:50051")
+    assert replica.data_dir == Path("/data")
 
 
 def test_env_beats_file(tmp_path: Path) -> None:
@@ -58,6 +70,8 @@ def test_env_beats_file(tmp_path: Path) -> None:
         {"DSEARCH_PORT": "70000"},
         {"DSEARCH_NUM_SHARDS": "0"},
         {"DSEARCH_SNAPSHOT_EVERY": "-1"},
+        {"DSEARCH_KEEPALIVE_TIME": "0"},
+        {"DSEARCH_KEEPALIVE_TIMEOUT": "-1"},
         {"DSEARCH_SEARCH_PREFERENCE": "replicas_only"},
         {"DSEARCH_RPC_TIMEOUT": "0"},
         {"DSEARCH_ROLE": "leader"},

@@ -9,6 +9,7 @@ import grpc
 from dsearch.index.operation import ApplyResult
 from dsearch.proto import search_pb2, search_pb2_grpc
 from dsearch.shard.primary import Primary, ReplicaAheadError
+from dsearch.shard.replica import Replica
 from dsearch.shard.store import ShardStore, StoreFailedError
 from dsearch.wire import (
     hits_to_proto,
@@ -20,11 +21,15 @@ from dsearch.wire import (
 
 
 class ShardServicer(search_pb2_grpc.ShardServicer):
-    """Serves one shard copy. `primary` is None on replicas."""
+    """Serves one shard copy. Exactly one of `primary` / `replica` is set."""
 
-    def __init__(self, store: ShardStore, primary: Primary | None) -> None:
+    def __init__(
+        self, node_id: str, store: ShardStore, primary: Primary | None, replica: Replica | None = None
+    ) -> None:
+        self._node_id = node_id
         self._store = store
         self._primary = primary
+        self._replica = replica
 
     async def Write(
         self, request: search_pb2.WriteRequest, context: grpc.aio.ServicerContext
@@ -70,6 +75,32 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
         return search_pb2.DumpStateReply(
             applied_seq=self._store.applied_seq, docs=state_to_proto(self._store.index.state())
         )
+
+    async def GetStatus(
+        self, request: search_pb2.StatusRequest, context: grpc.aio.ServicerContext
+    ) -> search_pb2.StatusReply:
+        """Replication and recovery status of this copy (D-025)."""
+        store = self._store
+        reply = search_pb2.StatusReply(
+            node_id=self._node_id,
+            role="primary" if self._primary is not None else "replica",
+            applied_seq=store.applied_seq,
+            last_logged_seq=store.update_log.last_seq,
+            log_bytes=store.update_log.size_bytes,
+            snapshot_seq=store.snapshot_seq,
+            local_replayed=store.open_report.replayed,
+        )
+        if self._replica is not None:
+            reply.live = self._replica.live
+            reply.full_rebuilds = self._replica.full_rebuilds
+            for r in self._replica.recoveries:
+                reply.recoveries.add(
+                    from_seq=r.from_seq,
+                    caught_up_seq=r.caught_up_seq,
+                    entries_replayed=r.entries_replayed,
+                    seconds=r.seconds,
+                )
+        return reply
 
     async def _require_primary(self, context: grpc.aio.ServicerContext) -> Primary:
         if self._primary is None:

@@ -9,7 +9,7 @@ import grpc
 from dsearch.config import Config, ConfigError, Role
 from dsearch.coordinator.router import shard_for
 from dsearch.coordinator.search import ScatterGather, ShardUnavailableError
-from dsearch.node_server import create_server
+from dsearch.node_server import channel_options, create_server
 from dsearch.proto import search_pb2, search_pb2_grpc
 from dsearch.wire import hits_to_proto
 
@@ -59,7 +59,9 @@ class CoordinatorNode:
             raise ConfigError(f"coordinator needs role coordinator, got {config.role.value}")
         if len(config.shards) != config.num_shards:
             raise ConfigError(f"coordinator needs [[shards]] topology for all {config.num_shards} shards")
-        scatter_gather = ScatterGather(config.shards, config.search_preference, config.rpc_timeout)
+        scatter_gather = ScatterGather(
+            config.shards, config.search_preference, config.rpc_timeout, channel_options(config)
+        )
         server, port = create_server(config)
         search_pb2_grpc.add_CoordinatorServicer_to_server(
             CoordinatorServicer(config, scatter_gather), server
