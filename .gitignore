@@ -11,6 +11,7 @@ data/
 *.sqlite
 *.log
 results/raw/
+eval/results/raw/
 .DS_Store
 CLAUDE.md
 Project_Writeup.pdf

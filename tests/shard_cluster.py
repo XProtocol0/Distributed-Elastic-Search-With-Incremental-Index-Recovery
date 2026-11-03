@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import grpc
 
@@ -18,9 +20,11 @@ from dsearch.wire import operation_to_write_request, state_from_proto
 
 
 def shard_config(
-    data_dir: Path, role: Role, node_id: str, port: int, primary_port: int, keepalive: float = 5.0
+    data_dir: Path, role: Role, node_id: str, port: int, primary_port: int, keepalive: float = 5.0,
+    **overrides: Any,
 ) -> Config:
-    return Config(
+    """Single-shard config; `overrides` set any other Config field (e.g. log_retention)."""
+    return replace(Config(
         node_id=node_id,
         role=role,
         shard_id=0,
@@ -32,17 +36,19 @@ def shard_config(
         keepalive_time=keepalive,
         keepalive_timeout=keepalive,
         shards=(ShardTopology(0, f"127.0.0.1:{primary_port}", ()),),
+    ), **overrides)
+
+
+async def start_primary(data_dir: Path, port: int, keepalive: float = 5.0, **overrides: Any) -> ShardNode:
+    return await ShardNode.start(
+        shard_config(data_dir, Role.PRIMARY, "s0-primary", port, port, keepalive, **overrides)
     )
 
 
-async def start_primary(data_dir: Path, port: int, keepalive: float = 5.0) -> ShardNode:
-    return await ShardNode.start(shard_config(data_dir, Role.PRIMARY, "s0-primary", port, port, keepalive))
-
-
 async def start_replica(
-    data_dir: Path, primary_port: int, node_id: str = "s0-replica1", keepalive: float = 5.0
+    data_dir: Path, primary_port: int, node_id: str = "s0-replica1", keepalive: float = 5.0, **overrides: Any
 ) -> ShardNode:
-    config = shard_config(data_dir, Role.REPLICA, node_id, 0, primary_port, keepalive)
+    config = shard_config(data_dir, Role.REPLICA, node_id, 0, primary_port, keepalive, **overrides)
     return await ShardNode.start(config, replica_retry_delay=0.05)
 
 

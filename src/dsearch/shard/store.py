@@ -10,16 +10,21 @@ durability order of Invariant 4:
 so the persisted applied_seq can never be ahead of what is in the index.
 On open, the index is rebuilt from the latest snapshot plus a replay of the
 local log after it.
+
+With `log_retention` > 0, each snapshot is followed by dropping log entries
+more than `log_retention` behind it (D-030). A replica whose needed range is
+gone is rebuilt with `install_snapshot` (D-031).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from dsearch.index.inverted_index import InvertedIndex
+from dsearch.index.inverted_index import DocState, InvertedIndex
 from dsearch.index.operation import ApplyResult, Operation
 from dsearch.proto import search_pb2
 from dsearch.storage.log_entry import entry_to_operation, make_entry
@@ -52,6 +57,7 @@ class OpenReport:
     persisted_applied_seq: int
     last_logged_seq: int
     replayed: int
+    seconds: float = 0.0
 
 
 class ShardStore:
@@ -63,6 +69,7 @@ class ShardStore:
         snapshot_seq: int,
         snapshot_every: int,
         report: OpenReport,
+        log_retention: int = 0,
     ) -> None:
         self.update_log = update_log
         self.db = db
@@ -70,26 +77,37 @@ class ShardStore:
         self.applied_seq = update_log.last_seq
         self.snapshot_seq = snapshot_seq
         self.snapshot_every = snapshot_every
+        self.log_retention = log_retention  # 0 = never truncate (D-030)
         self.open_report = report
         self._write_lock = asyncio.Lock()  # one write at a time, in seq order (D-010)
         self._applied_changed = asyncio.Condition()  # notified after each write (D-014)
         self._failed = False
 
     @classmethod
-    async def open(cls, data_dir: Path, snapshot_every: int = 0) -> "ShardStore":
+    async def open(cls, data_dir: Path, snapshot_every: int = 0, log_retention: int = 0) -> "ShardStore":
         """Open the node's store, rebuilding the index from snapshot + local log replay."""
-        update_log = await UpdateLog.open(data_dir / LOG_FILE)
+        started = time.monotonic()
         db = await StateDB.open(data_dir / DB_FILE)
         snapshot_seq, docs = await asyncio.to_thread(db.load_snapshot_sync)
         persisted = await asyncio.to_thread(db.applied_seq_sync)
+        update_log = await UpdateLog.open(data_dir / LOG_FILE, base_seq=snapshot_seq)
+        if update_log.last_seq < snapshot_seq:
+            # Everything in it is covered by the snapshot: a crash between the two
+            # steps of install_snapshot (D-031). Start the log after the snapshot.
+            log.warning(
+                "%s: log ends at seq=%d, before snapshot_seq=%d; resetting it",
+                data_dir, update_log.last_seq, snapshot_seq,
+            )
+            await update_log.reset(snapshot_seq)
         last = update_log.last_seq
 
-        if not snapshot_seq <= persisted <= last:
+        if update_log.first_seq > snapshot_seq + 1 or not snapshot_seq <= persisted <= last:
             update_log.close()
             db.close()
             raise CorruptStateError(
-                f"{data_dir}: expected snapshot_seq <= applied_seq <= last logged seq, got "
-                f"snapshot_seq={snapshot_seq} applied_seq={persisted} last_logged_seq={last}"
+                f"{data_dir}: expected first logged seq - 1 <= snapshot_seq <= applied_seq <= last logged "
+                f"seq, got first_logged_seq={update_log.first_seq} snapshot_seq={snapshot_seq} "
+                f"applied_seq={persisted} last_logged_seq={last}"
             )
 
         index = InvertedIndex.from_state(docs)
@@ -100,54 +118,65 @@ class ShardStore:
             replayed += 1
         await db.set_applied_seq(last)
 
-        report = OpenReport(snapshot_seq, persisted, last, replayed)
+        report = OpenReport(snapshot_seq, persisted, last, replayed, time.monotonic() - started)
         log.info(
-            "opened %s: snapshot_seq=%d persisted applied_seq=%d replayed seq=%d..%d (%d entries)",
-            data_dir, snapshot_seq, persisted, snapshot_seq + 1, last, replayed,
+            "opened %s in %.3fs: snapshot_seq=%d persisted applied_seq=%d replayed seq=%d..%d (%d entries)",
+            data_dir, report.seconds, snapshot_seq, persisted, snapshot_seq + 1, last, replayed,
         )
-        return cls(update_log, db, index, snapshot_seq, snapshot_every, report)
+        return cls(update_log, db, index, snapshot_seq, snapshot_every, report, log_retention)
 
     async def write(self, entry: search_pb2.LogEntry) -> ApplyResult:
-        """Durably log `entry`, apply it and record it as applied (replica path).
+        """Durably log `entry`, apply it and record it as applied (a batch of one)."""
+        return (await self.write_batch([entry]))[0]
 
-        `entry.seq` must be exactly `applied_seq + 1`. Any failure part-way
-        leaves the store failed (crash-stop); reopening recovers from disk.
+    async def write_batch(self, entries: list[search_pb2.LogEntry]) -> list[ApplyResult]:
+        """Replica path: log the consecutive `entries` with one fsync, apply them,
+        then persist the last seq as applied (group commit, D-034).
+
+        The first seq must be exactly `applied_seq + 1` and the rest dense;
+        otherwise nothing is logged. Any failure part-way leaves the store
+        failed (crash-stop); reopening recovers from disk.
         """
-        op = entry_to_operation(entry)  # reject malformed entries before logging
+        ops = [entry_to_operation(e) for e in entries]  # reject malformed entries before logging
         # Shielded (D-021): a cancelled caller must not cut the durability steps in half.
-        return await asyncio.shield(self._write(entry, op))
+        return await asyncio.shield(self._write_batch(entries, ops))
 
     async def append_new(self, op: Operation) -> tuple[int, ApplyResult]:
         """Assign the next seq to `op` and write it (primary path)."""
         return await asyncio.shield(self._append_new(op))  # see D-021
 
-    async def _write(self, entry: search_pb2.LogEntry, op: Operation) -> ApplyResult:
+    async def _write_batch(self, entries: list[search_pb2.LogEntry], ops: list[Operation]) -> list[ApplyResult]:
         async with self._write_lock:
-            if entry.seq != self.applied_seq + 1:
-                raise SeqMismatchError(f"write seq={entry.seq}, expected seq={self.applied_seq + 1}")
-            return await self._write_locked(entry, op)
+            for i, entry in enumerate(entries):
+                if entry.seq != self.applied_seq + 1 + i:
+                    raise SeqMismatchError(f"write seq={entry.seq}, expected seq={self.applied_seq + 1 + i}")
+            return await self._write_locked(entries, ops)
 
     async def _append_new(self, op: Operation) -> tuple[int, ApplyResult]:
         async with self._write_lock:
             entry = make_entry(self.applied_seq + 1, op)
-            return entry.seq, await self._write_locked(entry, op)
+            return entry.seq, (await self._write_locked([entry], [op]))[0]
 
-    async def _write_locked(self, entry: search_pb2.LogEntry, op: Operation) -> ApplyResult:
+    async def _write_locked(self, entries: list[search_pb2.LogEntry], ops: list[Operation]) -> list[ApplyResult]:
+        if not entries:
+            return []
         if self._failed:
             raise StoreFailedError("store failed earlier; restart the node")
+        last = entries[-1].seq
         try:
-            await self.update_log.append(entry)  # 1. log + fsync
-            result = self.index.apply(op)  # 2. apply (sync, atomic for search)
-            await self.db.set_applied_seq(entry.seq)  # 3. persist position
+            await self.update_log.append_batch(entries)  # 1. log + fsync (once per batch)
+            results = [self.index.apply(op) for op in ops]  # 2. apply (sync, atomic for search)
+            await self.db.set_applied_seq(last)  # 3. persist position
         except BaseException:
             self._failed = True
-            log.exception("write seq=%d failed; store is now failed", entry.seq)
+            log.exception("write seq=%d..%d failed; store is now failed", entries[0].seq, last)
             raise
-        self.applied_seq = entry.seq
-        log.debug(
-            "applied seq=%d %s doc=%s v=%d -> %s",
-            entry.seq, op.op_type.value, op.doc_id, op.version, result.value,
-        )
+        self.applied_seq = last
+        for entry, op, result in zip(entries, ops, results):
+            log.debug(
+                "applied seq=%d %s doc=%s v=%d -> %s",
+                entry.seq, op.op_type.value, op.doc_id, op.version, result.value,
+            )
         async with self._applied_changed:
             self._applied_changed.notify_all()
         if self.snapshot_every and self.applied_seq - self.snapshot_seq >= self.snapshot_every:
@@ -156,7 +185,7 @@ class ShardStore:
             except Exception:
                 # The write is already durable; a missed snapshot only means a longer replay.
                 log.exception("snapshot at seq=%d failed", self.applied_seq)
-        return result
+        return results
 
     # ---- reading applied entries (replication source, D-014) -----------
 
@@ -183,6 +212,48 @@ class ShardStore:
         await self.db.write_snapshot(seq, docs)
         self.snapshot_seq = seq
         log.info("snapshot at seq=%d (%d docs)", seq, len(docs))
+        if self.log_retention:
+            dropped = await self.update_log.truncate_through(seq - self.log_retention)
+            if dropped:
+                log.info(
+                    "truncated log: dropped %d entries, log now starts at seq=%d (retention=%d)",
+                    dropped, self.update_log.first_seq, self.log_retention,
+                )
+
+    # ---- full rebuild (D-031) ------------------------------------------
+
+    async def consistent_state(self) -> tuple[int, dict[str, DocState]]:
+        """(applied_seq, copy of every doc) at one seq, for a replica's full rebuild.
+        Taken under the write lock: a write applies to the index before its
+        applied_seq is updated, so the two are only consistent between writes."""
+        async with self._write_lock:
+            return self.applied_seq, self.index.state()
+
+    async def install_snapshot(self, seq: int, docs: dict[str, DocState]) -> None:
+        """Replace this copy's whole state with `docs` as of `seq` (replica full rebuild).
+
+        Order: (1) SQLite snapshot + applied_seq in one transaction, (2) empty the
+        local log so it continues after `seq`, (3) swap the in-memory index. A crash
+        after (1) leaves a log older than the snapshot, which `open` resets.
+        """
+        await asyncio.shield(self._install_snapshot(seq, docs))  # see D-021
+
+    async def _install_snapshot(self, seq: int, docs: dict[str, DocState]) -> None:
+        async with self._write_lock:
+            if self._failed:
+                raise StoreFailedError("store failed earlier; restart the node")
+            try:
+                await self.db.write_snapshot(seq, docs, set_applied=True)
+                await self.update_log.reset(seq)
+                self.index = InvertedIndex.from_state(docs)
+            except BaseException:
+                self._failed = True
+                log.exception("install of snapshot at seq=%d failed; store is now failed", seq)
+                raise
+            self.applied_seq = self.snapshot_seq = seq
+            log.warning("installed snapshot at seq=%d (%d docs); local log reset", seq, len(docs))
+        async with self._applied_changed:
+            self._applied_changed.notify_all()
 
     async def close(self) -> None:
         async with self._write_lock:

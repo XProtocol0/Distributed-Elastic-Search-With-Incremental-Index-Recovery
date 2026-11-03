@@ -11,6 +11,7 @@ from dsearch.proto import search_pb2, search_pb2_grpc
 from dsearch.shard.primary import Primary, ReplicaAheadError
 from dsearch.shard.replica import Replica
 from dsearch.shard.store import ShardStore, StoreFailedError
+from dsearch.storage.update_log import LogTruncatedError
 from dsearch.wire import (
     hits_to_proto,
     state_to_proto,
@@ -54,6 +55,16 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
                 yield message
         except ReplicaAheadError as exc:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+        except LogTruncatedError as exc:
+            # The replica must do a full rebuild (D-031).
+            await context.abort(grpc.StatusCode.OUT_OF_RANGE, str(exc))
+
+    async def FetchSnapshot(
+        self, request: search_pb2.FetchSnapshotRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[search_pb2.SnapshotChunk]:
+        primary = await self._require_primary(context)
+        async for chunk in primary.snapshot_chunks(request.replica_id):
+            yield chunk
 
     async def GetStats(
         self, request: search_pb2.StatsRequest, context: grpc.aio.ServicerContext
@@ -89,6 +100,8 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
             log_bytes=store.update_log.size_bytes,
             snapshot_seq=store.snapshot_seq,
             local_replayed=store.open_report.replayed,
+            first_logged_seq=store.update_log.first_seq,
+            open_seconds=store.open_report.seconds,
         )
         if self._replica is not None:
             reply.live = self._replica.live
@@ -99,6 +112,8 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
                     caught_up_seq=r.caught_up_seq,
                     entries_replayed=r.entries_replayed,
                     seconds=r.seconds,
+                    full_rebuild=r.full_rebuild,
+                    snapshot_docs=r.snapshot_docs,
                 )
         return reply
 

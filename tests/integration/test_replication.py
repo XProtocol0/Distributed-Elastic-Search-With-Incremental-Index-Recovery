@@ -102,12 +102,12 @@ async def test_stream_sends_catch_up_then_marker_then_live(cluster) -> None:
     for i in range(3):
         await client.write(ins(f"d{i}", 1, "x"))
     stream = client.stub.Replicate(search_pb2.ReplicateRequest(replica_id="probe", from_seq=1))
-    received = [await stream.read() for _ in range(3)]
-    assert [m.entry.seq for m in received[:2]] == [2, 3]
-    assert received[2].caught_up_seq == 3
+    catch_up, marker = await stream.read(), await stream.read()
+    assert [e.seq for e in catch_up.entries.entries] == [2, 3]  # one batch (D-034)
+    assert marker.caught_up_seq == 3
     await client.write(ins("live", 1, "y"))
-    live = await stream.read()
-    assert live.entry.seq == 4 and live.entry.doc_id == "live"
+    live = (await stream.read()).entries.entries
+    assert [(e.seq, e.doc_id) for e in live] == [(4, "live")]
     stream.cancel()
 
 
@@ -207,13 +207,13 @@ async def test_search_rpcs_return_exact_local_results(cluster) -> None:
 
 
 def slow_appends(node, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
-    original = node.store.update_log.append_sync
+    original = node.store.update_log.append_batch_sync
 
-    def slow(entry):
+    def slow(entries):
         time.sleep(seconds)
-        original(entry)
+        original(entries)
 
-    monkeypatch.setattr(node.store.update_log, "append_sync", slow)
+    monkeypatch.setattr(node.store.update_log, "append_batch_sync", slow)
 
 
 async def test_disconnect_in_the_middle_of_a_replica_write(cluster, monkeypatch) -> None:

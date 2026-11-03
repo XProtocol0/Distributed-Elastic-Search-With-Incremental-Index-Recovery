@@ -24,3 +24,8 @@ make cluster-down              # stop and delete all node data
 
 `python scripts/fault_scenario.py --fresh` runs the whole partition-and-crash scenario and ends with the
 convergence check. `make test` runs the test suite without Docker; `make test-docker` runs the Docker scenario.
+
+## Evaluation
+
+Recovery time (incremental replay vs full rebuild), update-log growth and query latency vs shard count, measured on
+real processes and on Docker: see [eval/REPORT.md](eval/REPORT.md). Re-run with the commands at the end of that file.

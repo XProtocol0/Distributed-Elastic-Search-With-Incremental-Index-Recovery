@@ -151,13 +151,13 @@ async def test_failed_snapshot_does_not_fail_the_write(
 
 
 def slow_appends(store: ShardStore, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
-    original = store.update_log.append_sync
+    original = store.update_log.append_batch_sync
 
-    def slow(entry):
+    def slow(entries):
         time.sleep(seconds)
-        original(entry)
+        original(entries)
 
-    monkeypatch.setattr(store.update_log, "append_sync", slow)
+    monkeypatch.setattr(store.update_log, "append_batch_sync", slow)
 
 
 async def test_cancelled_write_still_completes_and_store_stays_healthy(

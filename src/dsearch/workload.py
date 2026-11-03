@@ -19,7 +19,7 @@ import json
 import logging
 import random
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, TextIO
@@ -128,14 +128,20 @@ class DocVersions:
             ops.append(op)
 
 
-def churn_ops(state: DocVersions, texts: Sequence[str], count: int, rng: random.Random) -> list[Operation]:
+def churn_ops(
+    state: DocVersions,
+    texts: Sequence[str],
+    count: int,
+    rng: random.Random,
+    mix: Mapping[str, float] = CHURN_MIX,
+) -> list[Operation]:
     """`count` replace/delete/re-insert ops plus deliberate stale and duplicate
-    re-sends, drawn by `CHURN_MIX`. Updates `state` as it goes."""
+    re-sends, drawn by `mix` (keys as in CHURN_MIX). Updates `state` as it goes."""
     ordered = sorted(state.history)  # fixed order so a seed reproduces the run
     live = _Pool(d for d in ordered if state.latest(d).op_type is not OpType.DELETE)
     dead = _Pool(d for d in ordered if state.latest(d).op_type is OpType.DELETE)
-    kinds = list(CHURN_MIX)
-    weights = list(CHURN_MIX.values())
+    kinds = list(mix)
+    weights = list(mix.values())
     ops: list[Operation] = []
     while len(ops) < count:
         kind = rng.choices(kinds, weights)[0]

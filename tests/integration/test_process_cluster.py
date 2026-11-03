@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from dsearch.cluster_status import wait_until_up
-from tests.process_cluster import ProcessCluster
+from dsearch.process_cluster import ProcessCluster
 
 ROOT = Path(__file__).resolve().parents[2]
 WORDS = "river mountain city music science history planet ocean forest king war language art film".split()
