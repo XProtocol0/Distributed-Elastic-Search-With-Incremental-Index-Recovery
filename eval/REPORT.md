@@ -1,8 +1,7 @@
 # Evaluation report
 
 This report covers recovery time (incremental log replay vs. full rebuild), update-log growth, and query latency as
-shards are added. All numbers come from `eval/results/summary.md`, which `eval/plot.py` generates from the raw CSVs.
-The method is design decision D-033.
+shards are added. All numbers come from `eval/results/summary.md`, which `eval/plot.py` generates from the measurements.
 
 ## Setup
 
@@ -11,8 +10,8 @@ The method is design decision D-033.
   - Once as **real processes**: one OS process per node on localhost.
   - Once on **Docker Compose** under colima, a VM with 4 CPUs and 6 GB, with data on virtiofs bind mounts.
   - Both runs use the same entry points and the same harness (`eval/harness.py`).
-- **Corpus:** 100,000 Simple English Wikipedia lead paragraphs (median 35 words; see D-026).
-- **Churn:** the workload driver's seeded mix (D-027): 55% replace, 20% delete, 10% re-insert, 10% stale re-send, 5% duplicate.
+- **Corpus:** 100,000 Simple English Wikipedia lead paragraphs (median 35 words).
+- **Churn:** the workload driver's seeded mix: 55% replace, 20% delete, 10% re-insert, 10% stale re-send, 5% duplicate.
 - **Correctness of every measurement:** each recovered replica was compared with its primary through `DumpState` and
   was identical. Each incremental run replayed exactly the missed number of entries. Each forced run did exactly one
   full rebuild.
@@ -51,7 +50,7 @@ restarting replica only learns that its range was truncated after it connects. T
 wall-clock advantage at 100k docs is 2.3× (processes, 2.64 s vs 6.10 s) and 3.1× (Docker, 3.83 s vs 11.81 s). The
 network part of recovery, which is what the protocol controls, is where the 95–170× difference shows up.
 
-**A design change found by this evaluation (D-034).** The first measurements showed incremental replay at only
+**A design change found by this evaluation.** The first measurements showed incremental replay at only
 1.3–2.9k entries/s. The replica wrote every replicated entry with two fsyncs: the log append and the SQLite
 `applied_seq` update. That made a full rebuild faster once more than about 10% of the index was missed. The replica
 now group-commits each replication batch: one log fsync, apply the batch, then persist the last seq once. The
@@ -72,7 +71,7 @@ still converges with zero differences.
 
 - **Without truncation the log grows linearly**, at about the size of the document text per update. Deletes carry no
   text, so delete-heavy streams grow more slowly. Nothing bounds this growth.
-- **With truncation (D-030) the log is bounded.** After each snapshot it drops entries more than `log_retention`
+- **With truncation the log is bounded.** After each snapshot it drops entries more than `log_retention`
   behind it, so its size saw-tooths between about 1.1 and 2.0 MB (5,000 to 10,000 entries) whatever the update count.
 - The price of truncation: a replica that misses more than about `log_retention` updates can no longer recover
   incrementally and gets a full rebuild. That path is covered by `tests/integration/test_full_rebuild.py`.
@@ -109,7 +108,7 @@ primaries.
 - macOS `fsync` doesn't force a full flush to the drive (`F_FULLFSYNC` isn't used), so host-process write and replay
   rates are optimistic compared with a Linux server. Docker on colima pays virtiofs costs instead, which is why every
   Docker durability number is 2–4× slower.
-- The full-rebuild baseline is forced with `force_full_rebuild` (D-032). Its cost is the same as a rebuild caused by
+- The full-rebuild baseline is forced with `force_full_rebuild`. Its cost is the same as a rebuild caused by
   truncation, since both run the same code; this is tested.
 - Wall-clock times include about 0.1 s of process start-up and about 0.4 s of container start-up, the same for both
   recovery modes.
@@ -117,7 +116,7 @@ primaries.
 ## Reproducing
 
 ```sh
-make corpus                                    # data/corpus.jsonl
+make corpus                                    # download and prepare the corpus
 docker compose build                           # image for the Docker backend
 python eval/recovery_time.py --backend process && python eval/recovery_time.py --backend docker
 python eval/query_latency.py --backend process && python eval/query_latency.py --backend docker
