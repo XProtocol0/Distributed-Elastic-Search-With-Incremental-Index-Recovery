@@ -3,7 +3,7 @@
 Each role's server (coordinator, primary, replica) starts from `create_server`
 and adds its own servicers; the `Node` liveness service is always present.
 Servers and long-lived channels use HTTP/2 keepalive so a silent network
-partition is noticed within seconds (D-024).
+partition is noticed within seconds.
 """
 
 from __future__ import annotations

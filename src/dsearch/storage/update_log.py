@@ -1,11 +1,11 @@
 """Append-only, fsynced update log of sequenced `LogEntry` records.
 
-On-disk record (D-008): [u32 length][u32 crc32(payload)][payload], big-endian,
+On-disk record: [u32 length][u32 crc32(payload)][payload], big-endian,
 where payload is a serialised `LogEntry`. Seqs are dense: each append must
-carry `last_seq + 1`. A byte-offset list gives O(1) access by seq (D-009).
+carry `last_seq + 1`. A byte-offset list gives O(1) access by seq.
 
 The log may start after seq 1: `truncate_through` drops old entries after a
-snapshot (D-030) and `reset` empties it for a snapshot install (D-031). The
+snapshot and `reset` empties it for a snapshot install. The
 first record's seq says where the log starts; an empty log starts after the
 `base_seq` its owner passes in (the snapshot seq).
 
@@ -39,7 +39,7 @@ class CorruptLogError(Exception):
 
 
 class LogTruncatedError(Exception):
-    """The requested entries were dropped by truncation (D-030)."""
+    """The requested entries were dropped by truncation."""
 
 
 class UpdateLog:
@@ -114,7 +114,7 @@ class UpdateLog:
         await asyncio.to_thread(self.append_sync, entry)
 
     def append_batch_sync(self, entries: list[search_pb2.LogEntry]) -> None:
-        """Write consecutive entries with a single fsync (group commit, D-034).
+        """Write consecutive entries with a single fsync (group commit).
         A crash before the fsync can leave any prefix of them: a torn tail."""
         for i, entry in enumerate(entries):
             if entry.seq != self.last_seq + 1 + i:
@@ -181,7 +181,7 @@ class UpdateLog:
                 yield entry
             next_seq = batch[-1].seq
 
-    # ---- truncation (D-030) and reset (D-031) ---------------------------
+    # ---- truncation and reset -------------------------------------------
 
     def truncate_through_sync(self, seq: int) -> int:
         """Drop every entry with seq <= `seq` (at least one entry is always kept).

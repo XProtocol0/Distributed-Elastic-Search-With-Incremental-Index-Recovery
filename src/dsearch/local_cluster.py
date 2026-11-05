@@ -106,7 +106,7 @@ class LocalCluster:
 
     async def wait_replicated(self, timeout: float = 10.0) -> None:
         """Wait until every running, connected replica has applied everything its
-        primary has. Replicas deliberately disconnected (D-016) are skipped."""
+        primary has. Replicas deliberately disconnected are skipped."""
         waits = []
         for copies in self.shards:
             primary = copies[0]

@@ -1,6 +1,6 @@
 # Cluster topology used by docker-compose.yml. Each container sets its own
 # identity (DSEARCH_NODE_ID, DSEARCH_ROLE, DSEARCH_SHARD_ID) with env vars,
-# which override values here (D-002). Hostnames are Compose service names.
+# which override values here. Hostnames are Compose service names.
 
 num_shards = 3
 replicas_per_shard = 2

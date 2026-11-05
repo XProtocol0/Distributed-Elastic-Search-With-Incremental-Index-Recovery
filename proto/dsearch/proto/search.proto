@@ -1,5 +1,5 @@
 // Source of truth for every node-to-node and client RPC.
-// Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py (see D-001).
+// Stubs are generated into src/dsearch/proto/ by scripts/gen_proto.py.
 
 syntax = "proto3";
 
@@ -19,7 +19,7 @@ message PingReply {
 }
 
 // ---- Update log -------------------------------------------------------
-// One sequenced operation. Stored in each node's update log (D-008) and,
+// One sequenced operation. Stored in each node's update log and,
 // from Phase 3, sent unchanged in replication and recovery streams.
 
 enum OpType {
@@ -33,7 +33,7 @@ message LogEntry {
   uint64 seq = 1;         // per-shard sequence number, dense from 1
   OpType op_type = 2;
   string doc_id = 3;
-  uint64 version = 4;     // client-supplied document version (D-003)
+  uint64 version = 4;     // client-supplied document version
   optional string text = 5;  // absent for deletes
 }
 
@@ -42,10 +42,10 @@ message LogEntry {
 // served only by primaries (others answer FAILED_PRECONDITION).
 
 service Shard {
-  // Assign the next seq to a write, log + fsync it, apply it, then ack (D-013).
+  // Assign the next seq to a write, log + fsync it, apply it, then ack.
   rpc Write(WriteRequest) returns (WriteReply);
 
-  // Replica pull (D-012): stream every entry with seq > from_seq, then a
+  // Replica pull: stream every entry with seq > from_seq, then a
   // caught_up_seq marker, then new entries live as they are applied.
   rpc Replicate(ReplicateRequest) returns (stream ReplicateMessage);
 
@@ -58,12 +58,12 @@ service Shard {
   // Every stored doc (live and tombstoned) plus applied_seq, for convergence checks.
   rpc DumpState(DumpStateRequest) returns (DumpStateReply);
 
-  // Replication and recovery status of this copy, for scripts and evaluation (D-025).
+  // Replication and recovery status of this copy, for scripts and evaluation.
   rpc GetStatus(StatusRequest) returns (StatusReply);
 
-  // Full rebuild (D-031): the primary's whole state at one seq, in chunks.
+  // Full rebuild: the primary's whole state at one seq, in chunks.
   // Used only when Replicate answers OUT_OF_RANGE (log truncated past the
-  // replica's applied_seq, D-030) or when the replica is forced to (D-032).
+  // replica's applied_seq) or when the replica is forced to.
   rpc FetchSnapshot(FetchSnapshotRequest) returns (stream SnapshotChunk);
 }
 
@@ -76,7 +76,7 @@ message WriteRequest {
 
 message WriteReply {
   uint64 seq = 1;
-  bool applied = 2;  // false: version not newer, a logged no-op (D-003)
+  bool applied = 2;  // false: version not newer, a logged no-op
 }
 
 message ReplicateRequest {
@@ -85,7 +85,7 @@ message ReplicateRequest {
 }
 
 message ReplicateMessage {
-  reserved 1;  // was a single LogEntry before batching (D-034)
+  reserved 1;  // was a single LogEntry before batching
   oneof kind {
     uint64 caught_up_seq = 2;  // all entries up to here have been sent
     EntryBatch entries = 3;    // consecutive entries, written by the replica as one group commit
@@ -114,7 +114,7 @@ message ShardSearchRequest {
 
 message SearchHit {
   string doc_id = 1;
-  double score = 2;  // double round-trips exactly, so scores compare with == (D-006)
+  double score = 2;  // double round-trips exactly, so scores compare with ==
 }
 
 message ShardSearchReply {
@@ -167,18 +167,18 @@ message StatusReply {
   bool live = 8;                 // replica: past the caught_up marker on a live stream
   repeated RecoverySession recoveries = 9;  // replica: since this process started
   uint32 full_rebuilds = 10;
-  uint64 first_logged_seq = 11;  // older entries were truncated (D-030)
+  uint64 first_logged_seq = 11;  // older entries were truncated
   double open_seconds = 12;      // local snapshot load + log replay at startup
 }
 
 // ---- Coordinator (client entry point) ---------------------------------
 
 service Coordinator {
-  // Route a write by crc32(doc_id) % N to that shard's primary (D-017, D-020).
+  // Route a write by crc32(doc_id) % N to that shard's primary.
   rpc Write(WriteRequest) returns (CoordinatorWriteReply);
 
   // Two-phase scatter-gather: global stats, then per-shard top-k merged into
-  // the global top-k, ties broken by doc_id (D-018, D-019).
+  // the global top-k, ties broken by doc_id.
   rpc Search(SearchRequest) returns (SearchReply);
 }
 

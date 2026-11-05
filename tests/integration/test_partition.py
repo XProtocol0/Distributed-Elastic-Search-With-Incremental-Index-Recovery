@@ -1,4 +1,4 @@
-"""Silent network partitions between replica and primary (D-024), plus GetStatus (D-025).
+"""Silent network partitions between replica and primary, plus GetStatus.
 
 The replica reaches its primary through `PartitionProxy`. While partitioned,
 the proxy drops bytes without closing anything, so only keepalive can tell
@@ -68,7 +68,7 @@ async def test_partitioned_replica_detects_dead_stream_and_replays_only_missed(t
         assert replica.store.index.state() == reference.state()
         assert replica.store.index.state() == primary.store.index.state()
 
-        # The same facts over the network (D-025).
+        # The same facts over the network.
         status = await get_status(f"127.0.0.1:{replica.port}")
         assert (status.role, status.applied_seq, status.last_logged_seq, status.live) == ("replica", 25, 25, True)
         assert [(r.from_seq, r.caught_up_seq, r.entries_replayed) for r in status.recoveries] == [

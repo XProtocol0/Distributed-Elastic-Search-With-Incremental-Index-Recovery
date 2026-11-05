@@ -1,4 +1,4 @@
-"""Invariant 3: a replace is atomic with respect to search (D-007).
+"""Invariant 3: a replace is atomic with respect to search.
 
 `apply` and `search` are synchronous, so a search running on the event loop
 between a node's awaits (log fsync, applied_seq persist) never sees a doc

@@ -1,5 +1,5 @@
 """Shared Hypothesis strategies: operation histories with one operation per
-(doc_id, version) pair (D-003), replayed with duplicates and in random order."""
+(doc_id, version) pair, replayed with duplicates and in random order."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""SQLite store for a node's applied seq and its latest snapshot (D-010, D-011).
+"""SQLite store for a node's applied seq and its latest snapshot.
 
 Tables:
   meta(key, value)                 -- 'applied_seq', 'snapshot_seq'
@@ -76,7 +76,7 @@ class StateDB:
     def write_snapshot_sync(self, seq: int, docs: dict[str, DocState], set_applied: bool = False) -> None:
         """Replace the stored snapshot with `docs` as of `seq`, in one transaction.
         With `set_applied`, applied_seq is set to `seq` in the same transaction
-        (installing a snapshot fetched from the primary, D-031)."""
+        (installing a snapshot fetched from the primary)."""
         with self._lock:
             conn = self._conn
             conn.execute("BEGIN IMMEDIATE")

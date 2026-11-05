@@ -1,4 +1,4 @@
-"""BM25 scoring with cluster-wide statistics (see D-006).
+"""BM25 scoring with cluster-wide statistics.
 
 Every node and the reference score through `score_document`, summing term
 contributions in sorted term order, so equal inputs give bit-identical floats.

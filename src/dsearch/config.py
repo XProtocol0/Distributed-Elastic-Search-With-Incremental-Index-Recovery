@@ -2,7 +2,7 @@
 
 Settings come from an optional TOML file (path in DSEARCH_CONFIG) holding the
 shared cluster topology, overridden per node by DSEARCH_* environment
-variables. Precedence: env > file > defaults (see D-002).
+variables. Precedence: env > file > defaults.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any
 
 
 class SearchPreference(str, Enum):
-    """Which shard copy a search reads (D-019)."""
+    """Which shard copy a search reads."""
 
     PRIMARY = "primary"
     ROUND_ROBIN = "round_robin"
@@ -49,12 +49,12 @@ class Config:
     port: int = 50051
     data_dir: Path = Path("data")
     log_level: str = "INFO"
-    snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off (D-011)
-    log_retention: int = 0  # log entries kept behind each snapshot; 0 = never truncate (D-030)
-    force_full_rebuild: bool = False  # replica: full rebuild on first connect; evaluation only (D-032)
+    snapshot_every: int = 10_000  # applied entries between snapshots; 0 = off
+    log_retention: int = 0  # log entries kept behind each snapshot; 0 = never truncate
+    force_full_rebuild: bool = False  # replica: full rebuild on first connect; evaluation only
     search_preference: SearchPreference = SearchPreference.PRIMARY
     rpc_timeout: float = 5.0  # seconds, per coordinator-to-shard call
-    keepalive_time: float = 5.0  # seconds between HTTP/2 pings on an idle connection (D-024)
+    keepalive_time: float = 5.0  # seconds between HTTP/2 pings on an idle connection
     keepalive_timeout: float = 5.0  # seconds to wait for a ping ack before dropping the connection
     shards: tuple[ShardTopology, ...] = field(default_factory=tuple)
 

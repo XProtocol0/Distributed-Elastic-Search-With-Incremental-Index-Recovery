@@ -1,4 +1,4 @@
-"""Tokenizer shared by every node and the reference (see D-005)."""
+"""Tokenizer shared by every node and the reference."""
 
 from __future__ import annotations
 
@@ -14,5 +14,5 @@ def tokenize(text: str) -> list[str]:
 
 
 def query_terms(query: str) -> list[str]:
-    """Unique query terms in sorted order, the fixed order BM25 sums in (D-006)."""
+    """Unique query terms in sorted order, the fixed order BM25 sums in."""
     return sorted(set(tokenize(query)))

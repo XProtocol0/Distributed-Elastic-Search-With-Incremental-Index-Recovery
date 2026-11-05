@@ -1,16 +1,16 @@
 """Shard replica: pulls log entries from its primary and applies them in seq order.
 
-The replica calls `Replicate(from_seq = applied_seq)` on the primary (D-012).
+The replica calls `Replicate(from_seq = applied_seq)` on the primary.
 Everything before the `caught_up_seq` marker is incremental recovery; after
 it, entries arrive live. If the stream breaks for any reason, the replica
 reconnects from its persisted applied_seq, so only missed entries are
-replayed. Any unexpected seq drops the stream (D-015). The channel uses
-keepalive, so a silent partition also breaks the stream (D-024).
+replayed. Any unexpected seq drops the stream. The channel uses
+keepalive, so a silent partition also breaks the stream.
 
 If the primary answers OUT_OF_RANGE (its log no longer holds the entries
-after our applied_seq, D-030), the next session is a full rebuild: fetch the
-primary's state at some seq S, install it, then replicate from S as usual
-(D-031). Every full rebuild is logged and counted (Invariant 8).
+after our applied_seq), the next session is a full rebuild: fetch the
+primary's state at some seq S, install it, then replicate from S as usual.
+Every full rebuild is logged and counted (Invariant 8).
 """
 
 from __future__ import annotations
@@ -64,12 +64,12 @@ class Replica:
         self.live = False  # past the caught_up marker on the current stream
         self.recoveries: list[RecoveryRecord] = []
         self.full_rebuilds = 0
-        # Why the next session must start with a full rebuild, or None (D-031, D-032).
+        # Why the next session must start with a full rebuild, or None.
         self._rebuild_reason: str | None = "forced (evaluation baseline)" if force_full_rebuild else None
         self._task: asyncio.Task[None] | None = None
         self._recovered = asyncio.Condition()  # notified when a catch-up session completes
 
-    # ---- control (also the in-process fault-injection hooks, D-016) -----
+    # ---- control (also the in-process fault-injection hooks) ------------
 
     def connect(self) -> None:
         """Start (or resume) pulling from the primary in the background."""
@@ -113,7 +113,7 @@ class Replica:
                     exc.code().name, exc.details(),
                 )
             except (SeqGapError, SeqMismatchError) as exc:
-                # e.g. a write cancelled by disconnect() finished after we reconnected (D-021)
+                # e.g. a write cancelled by disconnect() finished after we reconnected
                 log.warning("replica=%s: %s; reconnecting", self.replica_id, exc)
             except StoreFailedError:
                 log.error("replica=%s: local store failed; stopping replication", self.replica_id)
@@ -148,7 +148,7 @@ class Replica:
                         raise SeqGapError(
                             f"received seq={entries[0].seq}..{entries[-1].seq}, expected from seq={expected}"
                         )
-                    await self.store.write_batch(entries)  # one group commit per message (D-034)
+                    await self.store.write_batch(entries)  # one group commit per message
                     replayed += len(entries)
                     log.debug("replica=%s applied seq=%d..%d", self.replica_id, entries[0].seq, entries[-1].seq)
                 else:

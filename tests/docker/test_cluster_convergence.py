@@ -1,4 +1,4 @@
-"""The core convergence scenario on the real Docker Compose cluster (D-028).
+"""The core convergence scenario on the real Docker Compose cluster.
 
 Excluded from a plain `pytest` run; run with `pytest -m docker` (or
 `make test-docker`). Skipped when Docker or data/corpus.jsonl is missing.

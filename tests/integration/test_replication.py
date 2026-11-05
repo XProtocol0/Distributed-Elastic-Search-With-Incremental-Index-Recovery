@@ -103,7 +103,7 @@ async def test_stream_sends_catch_up_then_marker_then_live(cluster) -> None:
         await client.write(ins(f"d{i}", 1, "x"))
     stream = client.stub.Replicate(search_pb2.ReplicateRequest(replica_id="probe", from_seq=1))
     catch_up, marker = await stream.read(), await stream.read()
-    assert [e.seq for e in catch_up.entries.entries] == [2, 3]  # one batch (D-034)
+    assert [e.seq for e in catch_up.entries.entries] == [2, 3]  # one batch
     assert marker.caught_up_seq == 3
     await client.write(ins("live", 1, "y"))
     live = (await stream.read()).entries.entries
@@ -217,7 +217,7 @@ def slow_appends(node, monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
 
 
 async def test_disconnect_in_the_middle_of_a_replica_write(cluster, monkeypatch) -> None:
-    """D-021: disconnect() cancels the replica mid-write; the write finishes, and
+    """`disconnect()` cancels the replica mid-write; the write finishes, and
     the replica reconnects and converges instead of failing its store."""
     primary, replica, client, _, _ = cluster
     reference = SingleNodeReference()

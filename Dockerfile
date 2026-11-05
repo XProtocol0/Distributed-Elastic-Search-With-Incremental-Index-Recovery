@@ -1,4 +1,4 @@
-# One image for every role; DSEARCH_ROLE etc. pick what a container runs (D-028).
+# One image for every role; DSEARCH_ROLE etc. pick what a container runs.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -8,7 +8,7 @@ COPY pyproject.toml ./
 COPY proto ./proto
 COPY scripts ./scripts
 COPY src ./src
-# Stubs are generated at build time, never committed (D-001).
+# Stubs are generated at build time, never committed.
 RUN pip install "grpcio-tools>=1.62" \
     && python scripts/gen_proto.py \
     && pip install . \

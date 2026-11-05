@@ -1,4 +1,4 @@
-"""Inject faults into the Docker Compose cluster (D-028).
+"""Inject faults into the Docker Compose cluster.
 
     python scripts/inject_fault.py kill shard1-replica2        # crash (SIGKILL); data volume survives
     python scripts/inject_fault.py start shard1-replica2       # restart after a crash
@@ -58,7 +58,7 @@ def fault_command(action: str, service: str, project: str) -> list[str]:
     if action == "disconnect":
         return ["docker", "network", "disconnect", network, container]
     # Reconnecting must restore the service-name alias, or the other nodes
-    # can no longer resolve e.g. "shard0-replica1" (D-028).
+    # can no longer resolve e.g. "shard0-replica1".
     return ["docker", "network", "connect", "--alias", service, network, container]
 
 

@@ -82,4 +82,4 @@ def test_sharded_top_k_with_merged_stats_equals_reference(h, qs, num_shards, k) 
         for shard in shards:
             hits.extend(shard.search(q, global_stats, k))
         merged = sorted(hits, key=lambda hit: (-hit.score, hit.doc_id))[:k]
-        assert merged == reference.search(q, k)  # exact float equality (D-006)
+        assert merged == reference.search(q, k)  # exact float equality

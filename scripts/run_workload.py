@@ -5,7 +5,7 @@
 Versions continue from the ops file written by load_data.py (and earlier
 workload runs); the new ops are appended to it. The mix of replaces,
 deletes, re-inserts and deliberately stale or duplicate re-sends is
-`dsearch.workload.CHURN_MIX`, drawn from a seeded RNG (D-027).
+`dsearch.workload.CHURN_MIX`, drawn from a seeded RNG.
 Exit code: 0 on success, 1 if a write had to be abandoned, 2 on bad input.
 """
 

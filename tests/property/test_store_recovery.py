@@ -2,7 +2,7 @@
 
 The recovered state must equal the reference fed exactly the acknowledged
 writes, and the persisted applied_seq must equal the last durable seq. With
-log truncation on (D-030), the log may start after seq 1 but must still
+log truncation on, the log may start after seq 1 but must still
 cover everything after the snapshot.
 """
 

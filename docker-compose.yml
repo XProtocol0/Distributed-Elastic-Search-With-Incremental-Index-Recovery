@@ -1,4 +1,4 @@
-# 1 coordinator + 3 shards x (1 primary + 2 replicas), one image (D-028).
+# 1 coordinator + 3 shards x (1 primary + 2 replicas), one image.
 #
 #   docker compose up -d --build                        # start the cluster
 #   docker compose run --rm tools python scripts/...    # scripts on the cluster network

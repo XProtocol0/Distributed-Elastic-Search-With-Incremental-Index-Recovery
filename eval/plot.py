@@ -1,4 +1,4 @@
-"""Plots and a summary table from the raw evaluation CSVs (D-033).
+"""Plots and a summary table from the raw evaluation CSVs.
 
     python eval/plot.py
 
