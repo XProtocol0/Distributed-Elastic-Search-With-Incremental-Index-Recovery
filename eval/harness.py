@@ -1,4 +1,4 @@
-"""Shared evaluation harness (D-033).
+"""Shared evaluation harness.
 
 Two cluster backends with the same interface: real processes
 (`dsearch.process_cluster.ProcessCluster`) and Docker Compose (`DockerCluster`,
@@ -94,7 +94,7 @@ class DockerCluster:
                 "DSEARCH_ROLE": role,
                 "DSEARCH_HOST": "0.0.0.0",
                 "DSEARCH_PORT": str(CONTAINER_PORT),
-                "DSEARCH_FORCE_FULL_REBUILD": "${DSEARCH_FORCE_FULL_REBUILD:-0}",  # per start (D-032)
+                "DSEARCH_FORCE_FULL_REBUILD": "${DSEARCH_FORCE_FULL_REBUILD:-0}",  # read from the env at each start
             }
             if shard_id is not None:
                 env["DSEARCH_SHARD_ID"] = str(shard_id)

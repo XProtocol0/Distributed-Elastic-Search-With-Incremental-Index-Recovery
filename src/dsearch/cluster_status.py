@@ -1,4 +1,4 @@
-"""Polling a running cluster over gRPC: liveness and replication status (D-025).
+"""Polling a running cluster over gRPC: liveness and replication status.
 
 Used by the cluster scripts and by tests that run nodes as separate
 processes or containers, where node objects can't be inspected directly.

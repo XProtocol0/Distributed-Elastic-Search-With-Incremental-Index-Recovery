@@ -16,7 +16,7 @@ class SearchClient:
         self._stub = search_pb2_grpc.CoordinatorStub(self._channel)
 
     async def write(self, op: Operation, timeout: float | None = None) -> search_pb2.CoordinatorWriteReply:
-        """Send an insert/replace/delete. Safe to retry with the same version (D-003)."""
+        """Send an insert/replace/delete. Safe to retry with the same version."""
         return await self._stub.Write(operation_to_write_request(op), timeout=timeout)
 
     async def search(self, query: str, k: int, timeout: float | None = None) -> list[SearchHit]:

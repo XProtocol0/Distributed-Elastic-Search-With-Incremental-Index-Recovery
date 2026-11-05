@@ -1,6 +1,6 @@
 # Shared cluster topology. Each node points DSEARCH_CONFIG at this file and
 # sets its own identity with env vars (DSEARCH_NODE_ID, DSEARCH_ROLE,
-# DSEARCH_SHARD_ID, DSEARCH_PORT). Env vars override values here (D-002).
+# DSEARCH_SHARD_ID, DSEARCH_PORT). Env vars override values here.
 
 num_shards = 3
 replicas_per_shard = 2

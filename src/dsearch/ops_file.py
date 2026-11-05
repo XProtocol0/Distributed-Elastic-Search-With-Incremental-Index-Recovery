@@ -1,8 +1,8 @@
-"""Ops file: JSON lines recording every operation a workload sent (D-023).
+"""Ops file: JSON lines recording every operation a workload sent.
 
 The convergence checker replays it into the single-node reference. Order in
 the file doesn't matter: the final state depends only on the highest version
-per doc (D-003).
+per doc.
 """
 
 from __future__ import annotations

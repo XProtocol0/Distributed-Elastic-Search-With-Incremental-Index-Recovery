@@ -1,4 +1,4 @@
-"""Group-committed replica writes (D-034): one fsync and one applied_seq update
+"""Group-committed replica writes: one fsync and one applied_seq update
 per batch, and the same durability order as single writes."""
 
 from __future__ import annotations

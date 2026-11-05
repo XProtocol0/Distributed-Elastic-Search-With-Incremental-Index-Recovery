@@ -1,4 +1,4 @@
-"""Two-phase scatter-gather search with global BM25 statistics (D-018, D-019).
+"""Two-phase scatter-gather search with global BM25 statistics.
 
 Phase 1: ask one copy of every shard for its share of the stats for the
          query's terms (trying the shard's copies in preference order) and
@@ -52,7 +52,7 @@ class ScatterGather:
         channel_options: list[tuple[str, int]] | None = None,
     ) -> None:
         self._shards = sorted(shards, key=lambda s: s.shard_id)
-        self._channel_options = channel_options or []  # keepalive (D-024)
+        self._channel_options = channel_options or []  # keepalive
         self._preference = preference
         self._timeout = rpc_timeout
         self._next_copy = {s.shard_id: 0 for s in self._shards}  # round-robin cursors

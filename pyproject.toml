@@ -25,7 +25,7 @@ eval = [
     "matplotlib>=3.8",
 ]
 data = [
-    "pyarrow>=15",  # reads the Wikipedia parquet in scripts/prepare_corpus.py (D-026)
+    "pyarrow>=15",  # reads the Wikipedia parquet in scripts/prepare_corpus.py
 ]
 
 [tool.setuptools.packages.find]

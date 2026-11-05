@@ -96,7 +96,7 @@ def test_wrong_seq_with_valid_checksum_refuses_to_open(tmp_path: Path) -> None:
         UpdateLog.open_sync(path)
 
 
-# ---- truncation and reset (D-030, D-031) --------------------------------
+# ---- truncation and reset -----------------------------------------------
 
 
 def test_truncate_keeps_the_tail_and_survives_reopen(tmp_path: Path) -> None:

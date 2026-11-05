@@ -1,4 +1,4 @@
-"""Update-log growth against the number of updates (D-033).
+"""Update-log growth against the number of updates.
 
     python eval/log_growth.py [--updates 50000]
 
@@ -8,9 +8,9 @@ depend on the process or Docker environment. Scenarios, all starting from
 the same 5,000 loaded docs except insert-only:
 
   insert-only     new docs only
-  churn           the workload mix (replace-heavy, D-027)
+  churn           the workload mix (replace-heavy)
   delete-heavy    mostly deletes and re-inserts
-  churn+truncate  churn with snapshot_every=5000, log_retention=5000 (D-030)
+  churn+truncate  churn with snapshot_every=5000, log_retention=5000
 
 Every 1,000 updates it records the log size, the SQLite state size and the
 live doc count.

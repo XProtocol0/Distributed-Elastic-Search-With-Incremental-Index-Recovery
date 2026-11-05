@@ -1,4 +1,4 @@
-"""Write operations applied to an index (see D-003)."""
+"""Write operations applied to an index."""
 
 from __future__ import annotations
 

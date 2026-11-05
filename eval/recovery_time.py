@@ -1,4 +1,4 @@
-"""Recovery time: incremental log replay vs full rebuild (D-033).
+"""Recovery time: incremental log replay vs full rebuild.
 
     python eval/recovery_time.py --backend process|docker [--trials 3]
 
@@ -7,7 +7,7 @@ base index is loaded once and saved as a template. For each number of missed
 updates M, the replica stays down while M churn ops (replace/delete/re-insert,
 plus stale/duplicate re-sends) go to the primary. The replica is then
 restarted from the same saved directory twice per trial: normally
-(incremental replay) and with DSEARCH_FORCE_FULL_REBUILD (D-032). Every
+(incremental replay) and with DSEARCH_FORCE_FULL_REBUILD. Every
 recovered copy is checked identical to the primary.
 
 Sweep 1: M varies at a fixed index size. Sweep 2: index size varies at fixed M.

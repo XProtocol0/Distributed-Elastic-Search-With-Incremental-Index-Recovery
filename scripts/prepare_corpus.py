@@ -1,4 +1,4 @@
-"""Download Simple English Wikipedia and cut it down to an abstracts corpus (D-026).
+"""Download Simple English Wikipedia and cut it down to an abstracts corpus.
 
     python scripts/prepare_corpus.py [--limit 100000] [--out data/corpus.jsonl]
 

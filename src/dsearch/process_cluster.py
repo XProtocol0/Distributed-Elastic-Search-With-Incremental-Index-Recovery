@@ -2,8 +2,8 @@
 
 Each node runs the same entry point as in a container (`python -m
 dsearch.shard` / `dsearch.coordinator`), configured by a generated TOML
-topology plus DSEARCH_* env vars (D-002). Used by tests that need real
-process crashes (SIGKILL) without Docker, and by the evaluation (D-033).
+topology plus DSEARCH_* env vars. Used by tests that need real
+process crashes (SIGKILL) without Docker, and by the evaluation.
 """
 
 from __future__ import annotations

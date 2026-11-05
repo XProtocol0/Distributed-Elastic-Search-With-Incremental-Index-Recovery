@@ -1,7 +1,7 @@
 """Generate Python gRPC stubs from every .proto file under proto/.
 
 The proto tree mirrors the package path (proto/dsearch/proto/*.proto), so the
-generated modules import each other as `dsearch.proto.<name>_pb2` (see D-001).
+generated modules import each other as `dsearch.proto.<name>_pb2`.
 Generated files are gitignored; never edit them by hand.
 """
 

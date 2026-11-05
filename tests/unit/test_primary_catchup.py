@@ -1,6 +1,6 @@
 """Replication stream framing: the caught_up marker comes right after the target
-seq even while writes continue (D-029), and entries travel in size-bounded
-batches (D-034)."""
+seq even while writes continue, and entries travel in size-bounded
+batches."""
 
 from __future__ import annotations
 

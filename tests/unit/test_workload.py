@@ -1,4 +1,4 @@
-"""Workload driver (D-027): churn generation and retrying sends, against a fake coordinator."""
+"""Workload driver: churn generation and retrying sends, against a fake coordinator."""
 
 from __future__ import annotations
 

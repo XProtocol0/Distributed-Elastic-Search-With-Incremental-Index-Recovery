@@ -1,4 +1,4 @@
-"""Convergence checker: compare every copy of every shard with the reference (D-022).
+"""Convergence checker: compare every copy of every shard with the reference.
 
 For each copy (primary and replicas) it checks:
   * documents, versions and tombstones (DumpState) against the reference's
@@ -71,7 +71,7 @@ class ConvergenceReport:
 
 
 def default_queries(reference: SingleNodeReference, count: int = 20, seed: int = 0) -> list[str]:
-    """Deterministic query set from the reference's vocabulary (D-022)."""
+    """Deterministic query set from the reference's vocabulary."""
     df: Counter[str] = Counter()
     for doc in reference.state().values():
         if doc.text is not None:

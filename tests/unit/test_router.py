@@ -4,7 +4,7 @@ from dsearch.coordinator.router import shard_for
 
 
 def test_known_values_are_stable() -> None:
-    # crc32 is fixed forever, unlike Python's per-process salted hash() (D-017).
+    # crc32 is fixed forever, unlike Python's per-process salted hash().
     assert [shard_for(d, 3) for d in ["doc1", "doc2", "doc3", "Café"]] == [2, 1, 2, 0]
 
 

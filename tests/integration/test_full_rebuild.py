@@ -1,5 +1,5 @@
-"""Full rebuild over real gRPC (no Docker): caused by log truncation (D-030, D-031)
-or forced for the evaluation baseline (D-032). Either way it must be counted,
+"""Full rebuild over real gRPC (no Docker): caused by log truncation
+or forced for the evaluation baseline. Either way it must be counted,
 and the replica must end in exactly the reference state."""
 
 from __future__ import annotations

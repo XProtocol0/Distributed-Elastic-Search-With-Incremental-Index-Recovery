@@ -56,7 +56,7 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
         except ReplicaAheadError as exc:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
         except LogTruncatedError as exc:
-            # The replica must do a full rebuild (D-031).
+            # The replica must do a full rebuild.
             await context.abort(grpc.StatusCode.OUT_OF_RANGE, str(exc))
 
     async def FetchSnapshot(
@@ -90,7 +90,7 @@ class ShardServicer(search_pb2_grpc.ShardServicer):
     async def GetStatus(
         self, request: search_pb2.StatusRequest, context: grpc.aio.ServicerContext
     ) -> search_pb2.StatusReply:
-        """Replication and recovery status of this copy (D-025)."""
+        """Replication and recovery status of this copy."""
         store = self._store
         reply = search_pb2.StatusReply(
             node_id=self._node_id,

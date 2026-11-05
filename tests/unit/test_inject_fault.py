@@ -1,4 +1,4 @@
-"""Docker commands behind each injected fault (D-028). Runs without Docker."""
+"""Docker commands behind each injected fault. Runs without Docker."""
 
 from __future__ import annotations
 

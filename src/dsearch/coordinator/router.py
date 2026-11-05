@@ -1,4 +1,4 @@
-"""Write routing (D-017)."""
+"""Write routing."""
 
 from __future__ import annotations
 

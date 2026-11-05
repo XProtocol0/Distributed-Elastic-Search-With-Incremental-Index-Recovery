@@ -2,8 +2,8 @@
 
     python scripts/check_convergence.py --config cluster.toml --ops ops.jsonl [--k 10] [--queries q.txt]
 
-The reference is built by replaying the ops file (JSON lines, D-023) that the
-workload driver recorded. Every copy of every shard is compared (D-022).
+The reference is built by replaying the ops file (JSON lines) that the
+workload driver recorded. Every copy of every shard is compared.
 Exit code: 0 if there are zero differences, 1 otherwise, 2 on bad input.
 """
 

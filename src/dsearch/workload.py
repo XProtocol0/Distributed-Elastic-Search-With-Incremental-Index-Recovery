@@ -1,10 +1,10 @@
-"""Workload driver: load a corpus, generate replace/delete churn, send it (D-027).
+"""Workload driver: load a corpus, generate replace/delete churn, send it.
 
 The driver owns document versions: it remembers the highest version it has
 sent for each doc (rebuilt from the ops file between runs), so every new
 write gets the next one. Writes go out with bounded concurrency, so two
 writes to the same doc can arrive in either order; versions make the final
-state the same either way (D-003).
+state the same either way.
 
 A write that fails with UNAVAILABLE or DEADLINE_EXCEEDED has an unknown
 outcome. It is retried with the *same* version until acknowledged (a
@@ -54,7 +54,7 @@ class CorpusDoc:
 
 
 def read_corpus(path: Path, limit: int | None = None) -> list[CorpusDoc]:
-    """Read a JSON-lines corpus of `{"doc_id": ..., "text": ...}` records (D-026)."""
+    """Read a JSON-lines corpus of `{"doc_id": ..., "text": ...}` records."""
     docs = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -227,7 +227,7 @@ async def send_ops(
     retry_for: float = 60.0,
     retry_delay: float = 0.2,
 ) -> SendStats:
-    """Send `ops` and append each acknowledged one to the ops file (D-023).
+    """Send `ops` and append each acknowledged one to the ops file.
 
     Raises WriteAbandonedError if a write can't be acknowledged within
     `retry_for` seconds; ops acknowledged until then are still recorded, but

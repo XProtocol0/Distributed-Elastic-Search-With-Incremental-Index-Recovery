@@ -1,4 +1,4 @@
-"""Print every shard copy's replication and recovery status (D-025).
+"""Print every shard copy's replication and recovery status.
 
     python scripts/cluster_status.py --config cluster.toml [--wait-replicas 60]
 

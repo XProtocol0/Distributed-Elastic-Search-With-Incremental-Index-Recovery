@@ -1,11 +1,11 @@
-"""Query latency as shards are added (D-033).
+"""Query latency as shards are added.
 
     python eval/query_latency.py --backend process|docker [--shards 1,2,3,4] [--docs 50000]
 
 For each shard count: a fresh cluster (1 replica per shard, primary reads),
 the same first N corpus docs, and the same query set drawn from the corpus
-vocabulary (D-022 generator). Each query runs once as warm-up, then
-`--reps` times sequentially from one client; every request's latency is a
+vocabulary (the convergence checker's query generator). Each query runs once
+as warm-up, then `--reps` times sequentially from one client; every request's latency is a
 CSV row. Because ranking uses global statistics, the top-k must be
 identical for every shard count; the script checks that and fails otherwise.
 """

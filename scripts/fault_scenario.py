@@ -59,7 +59,7 @@ def check_recovery(statuses: dict[str, dict]) -> list[str]:
         if int(status["full_rebuilds"]):
             problems.append(f"{address}: {status['full_rebuilds']} full rebuild(s)")
     partitioned = statuses[f"{PARTITIONED}:50051"]
-    # The partition breaks the first stream (keepalive, D-024); healing starts a second one.
+    # The partition breaks the first stream (keepalive); healing starts a second one.
     sessions = partitioned["recoveries"]
     if len(sessions) < 2 or not any(int(s["entries_replayed"]) > 0 for s in sessions[1:]):
         problems.append(f"{PARTITIONED}: expected a catch-up session that replayed missed entries, got {sessions}")

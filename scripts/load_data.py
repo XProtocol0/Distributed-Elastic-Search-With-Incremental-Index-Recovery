@@ -3,9 +3,9 @@
     python scripts/load_data.py --corpus data/corpus.jsonl --ops data/run/ops.jsonl [--limit N]
 
 Every doc is inserted at version 1, and each acknowledged write is recorded
-in the ops file (D-023) that the convergence checker replays into the
+in the ops file that the convergence checker replays into the
 reference. A load starts a new run, so the ops file must not exist yet.
-Exit code: 0 on success, 1 if a write had to be abandoned (D-027), 2 on bad input.
+Exit code: 0 on success, 1 if a write had to be abandoned, 2 on bad input.
 """
 
 from __future__ import annotations

@@ -1,9 +1,8 @@
 """Shard primary: assigns seqs to writes and serves replication streams.
 
-A write is acknowledged once the primary has logged, fsynced and applied it
-(D-013). Replicas pull entries with `Replicate(from_seq)` (D-012). The stream
-reads from the primary's log, so catch-up and live replication are the same
-loop (D-014).
+A write is acknowledged once the primary has logged, fsynced and applied it.
+Replicas pull entries with `Replicate(from_seq)`. The stream reads from the
+primary's log, so catch-up and live replication are the same loop.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 class ReplicaAheadError(Exception):
-    """A replica asked for entries after a seq the primary has not reached (D-015)."""
+    """A replica asked for entries after a seq the primary has not reached."""
 
 
 class Primary:
@@ -49,7 +48,7 @@ class Primary:
                 f"replica={replica_id} from_seq={from_seq} is ahead of primary applied_seq={target}"
             )
         if from_seq + 1 < self.store.update_log.first_seq:
-            # Reads would raise this too; checking first gives a clear log line (D-030).
+            # Reads would raise this too; checking first gives a clear log line.
             raise LogTruncatedError(
                 f"replica={replica_id} needs entries after seq={from_seq}, "
                 f"log starts at seq={self.store.update_log.first_seq}"
@@ -67,7 +66,7 @@ class Primary:
                 yield search_pb2.ReplicateMessage(caught_up_seq=target)
 
             # During catch-up, stop each batch at `target` so the marker comes right
-            # after it and the replica's recovery record counts only missed entries (D-029).
+            # after it and the replica's recovery record counts only missed entries.
             limit = self.batch_size if caught_up else min(self.batch_size, target - next_seq)
             batch = await self.store.read_applied_after(next_seq, limit)
             if not batch:
@@ -82,7 +81,7 @@ class Primary:
             next_seq = batch[-1].seq
 
     def _messages(self, batch: list[search_pb2.LogEntry]) -> list[search_pb2.ReplicateMessage]:
-        """Split consecutive entries into messages of at most `batch_bytes` (D-034)."""
+        """Split consecutive entries into messages of at most `batch_bytes`."""
         messages = []
         current = search_pb2.ReplicateMessage()
         size = 0
@@ -99,7 +98,7 @@ class Primary:
     async def snapshot_chunks(
         self, replica_id: str, chunk_bytes: int = 1 << 20
     ) -> AsyncIterator[search_pb2.SnapshotChunk]:
-        """The whole shard state at one seq, for a replica's full rebuild (D-031),
+        """The whole shard state at one seq, for a replica's full rebuild,
         in chunks of about `chunk_bytes` (well under gRPC's 4 MB message limit)."""
         seq, docs = await self.store.consistent_state()
         log.warning("replica=%s full rebuild: sending snapshot at seq=%d (%d docs)", replica_id, seq, len(docs))

@@ -1,6 +1,6 @@
 """In-memory inverted index holding one shard's documents, versions and tombstones.
 
-Concurrency rule (D-007): the index is only touched from the event-loop thread,
+Concurrency rule: the index is only touched from the event-loop thread,
 and `apply` and `search` never await, so a replace is atomic with respect to
 search. Never call them through `asyncio.to_thread`.
 """

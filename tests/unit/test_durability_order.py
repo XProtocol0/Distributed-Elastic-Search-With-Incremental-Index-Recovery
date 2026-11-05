@@ -163,7 +163,7 @@ def slow_appends(store: ShardStore, monkeypatch: pytest.MonkeyPatch, seconds: fl
 async def test_cancelled_write_still_completes_and_store_stays_healthy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-021: cancelling the caller (client deadline, replica disconnect) must
+    """Cancelling the caller (client deadline, replica disconnect) must
     neither fail the store nor leave a half-done write."""
     store = await ShardStore.open(tmp_path)
     slow_appends(store, monkeypatch, 0.2)

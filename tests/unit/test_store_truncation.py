@@ -1,4 +1,4 @@
-"""Log truncation after snapshots (D-030) and crash-safe snapshot install (D-031)."""
+"""Log truncation after snapshots and crash-safe snapshot install."""
 
 from __future__ import annotations
 

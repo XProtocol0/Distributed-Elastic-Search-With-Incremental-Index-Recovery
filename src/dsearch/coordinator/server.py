@@ -26,7 +26,7 @@ class CoordinatorServicer(search_pb2_grpc.CoordinatorServicer):
     async def Write(
         self, request: search_pb2.WriteRequest, context: grpc.aio.ServicerContext
     ) -> search_pb2.CoordinatorWriteReply:
-        """Forward the write to its shard's primary; primary errors pass through (D-020)."""
+        """Forward the write to its shard's primary; primary errors pass through."""
         shard_id = shard_for(request.doc_id, self._num_shards)
         primary = self._primaries[shard_id]
         try:

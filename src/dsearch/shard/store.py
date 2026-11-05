@@ -1,6 +1,6 @@
 """One node's durable copy of a shard: update log + SQLite state + in-memory index.
 
-Used by both primaries and replicas (D-010). Every write follows the
+Used by both primaries and replicas. Every write follows the
 durability order of Invariant 4:
 
     1. append the entry to the update log and fsync
@@ -12,8 +12,8 @@ On open, the index is rebuilt from the latest snapshot plus a replay of the
 local log after it.
 
 With `log_retention` > 0, each snapshot is followed by dropping log entries
-more than `log_retention` behind it (D-030). A replica whose needed range is
-gone is rebuilt with `install_snapshot` (D-031).
+more than `log_retention` behind it. A replica whose needed range is
+gone is rebuilt with `install_snapshot`.
 """
 
 from __future__ import annotations
@@ -77,10 +77,10 @@ class ShardStore:
         self.applied_seq = update_log.last_seq
         self.snapshot_seq = snapshot_seq
         self.snapshot_every = snapshot_every
-        self.log_retention = log_retention  # 0 = never truncate (D-030)
+        self.log_retention = log_retention  # 0 = never truncate
         self.open_report = report
-        self._write_lock = asyncio.Lock()  # one write at a time, in seq order (D-010)
-        self._applied_changed = asyncio.Condition()  # notified after each write (D-014)
+        self._write_lock = asyncio.Lock()  # one write at a time, in seq order
+        self._applied_changed = asyncio.Condition()  # notified after each write
         self._failed = False
 
     @classmethod
@@ -93,7 +93,7 @@ class ShardStore:
         update_log = await UpdateLog.open(data_dir / LOG_FILE, base_seq=snapshot_seq)
         if update_log.last_seq < snapshot_seq:
             # Everything in it is covered by the snapshot: a crash between the two
-            # steps of install_snapshot (D-031). Start the log after the snapshot.
+            # steps of install_snapshot. Start the log after the snapshot.
             log.warning(
                 "%s: log ends at seq=%d, before snapshot_seq=%d; resetting it",
                 data_dir, update_log.last_seq, snapshot_seq,
@@ -131,19 +131,19 @@ class ShardStore:
 
     async def write_batch(self, entries: list[search_pb2.LogEntry]) -> list[ApplyResult]:
         """Replica path: log the consecutive `entries` with one fsync, apply them,
-        then persist the last seq as applied (group commit, D-034).
+        then persist the last seq as applied (group commit).
 
         The first seq must be exactly `applied_seq + 1` and the rest dense;
         otherwise nothing is logged. Any failure part-way leaves the store
         failed (crash-stop); reopening recovers from disk.
         """
         ops = [entry_to_operation(e) for e in entries]  # reject malformed entries before logging
-        # Shielded (D-021): a cancelled caller must not cut the durability steps in half.
+        # Shielded: a cancelled caller must not cut the durability steps in half.
         return await asyncio.shield(self._write_batch(entries, ops))
 
     async def append_new(self, op: Operation) -> tuple[int, ApplyResult]:
         """Assign the next seq to `op` and write it (primary path)."""
-        return await asyncio.shield(self._append_new(op))  # see D-021
+        return await asyncio.shield(self._append_new(op))
 
     async def _write_batch(self, entries: list[search_pb2.LogEntry], ops: list[Operation]) -> list[ApplyResult]:
         async with self._write_lock:
@@ -187,7 +187,7 @@ class ShardStore:
                 log.exception("snapshot at seq=%d failed", self.applied_seq)
         return results
 
-    # ---- reading applied entries (replication source, D-014) -----------
+    # ---- reading applied entries (replication source) ------------------
 
     async def read_applied_after(self, after_seq: int, max_entries: int) -> list[search_pb2.LogEntry]:
         """Up to `max_entries` logged entries with after_seq < seq <= applied_seq."""
@@ -220,7 +220,7 @@ class ShardStore:
                     dropped, self.update_log.first_seq, self.log_retention,
                 )
 
-    # ---- full rebuild (D-031) ------------------------------------------
+    # ---- full rebuild --------------------------------------------------
 
     async def consistent_state(self) -> tuple[int, dict[str, DocState]]:
         """(applied_seq, copy of every doc) at one seq, for a replica's full rebuild.
@@ -236,7 +236,7 @@ class ShardStore:
         local log so it continues after `seq`, (3) swap the in-memory index. A crash
         after (1) leaves a log older than the snapshot, which `open` resets.
         """
-        await asyncio.shield(self._install_snapshot(seq, docs))  # see D-021
+        await asyncio.shield(self._install_snapshot(seq, docs))
 
     async def _install_snapshot(self, seq: int, docs: dict[str, DocState]) -> None:
         async with self._write_lock:
